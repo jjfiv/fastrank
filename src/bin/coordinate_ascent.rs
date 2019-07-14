@@ -60,8 +60,7 @@ fn main() -> Result<(), Box<Error>> {
         .collect();
     let instances = instances?;
 
-    let mut m = CoordinateAscentModel::new_with_params(params);
-    let final_score = m.learn(instances);
+    let final_score = params.learn(instances);
     println!("TRAINING mAP: {:.3}", final_score);
     Ok(())
 }

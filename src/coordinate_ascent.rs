@@ -51,32 +51,6 @@ impl Features {
         }
         features
     }
-    fn eval_linear_model(&self, weights: &[f64]) -> f64 {
-        let mut output = 0.0;
-        match self {
-            Features::Dense32(arr) => {
-                for (feature, weight) in arr.iter().cloned().zip(weights.iter().cloned()) {
-                    output += f64::from(feature) * weight;
-                }
-            }
-            Features::Dense64(arr) => {
-                for (feature, weight) in arr.iter().cloned().zip(weights.iter().cloned()) {
-                    output += feature * weight;
-                }
-            }
-            Features::Sparse32(arr) => {
-                for (idx, feature) in arr.iter().cloned() {
-                    output += f64::from(feature) * weights[idx as usize];
-                }
-            }
-            Features::Sparse64(arr) => {
-                for (idx, feature) in arr.iter().cloned() {
-                    output += feature * weights[idx as usize];
-                }
-            }
-        };
-        output
-    }
 }
 
 pub struct TrainingInstance {
@@ -133,12 +107,6 @@ impl Default for CoordinateAscentParams {
     }
 }
 
-#[derive(Clone, Debug)]
-pub struct CoordinateAscentModel {
-    pub params: CoordinateAscentParams,
-    pub weights: Vec<f64>,
-}
-
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Scored<T: Clone> {
     pub score: NotNan<f64>,
@@ -183,19 +151,69 @@ fn normalize(weights: &mut [f64]) {
     }
 }
 
-impl CoordinateAscentModel {
-    pub fn new() -> Self {
-        Self::new_with_params(CoordinateAscentParams::default())
+#[derive(Debug,Clone)]
+pub struct DenseLinearRankingModel {
+    weights: Vec<f64>,
+}
+impl DenseLinearRankingModel {
+    fn new(n_dim: u32) -> Self {
+        Self { weights: vec![0.0; n_dim as usize] }
     }
-    pub fn new_with_params(params: CoordinateAscentParams) -> Self {
-        CoordinateAscentModel {
-            params,
-            weights: Vec::new(),
+
+    fn reset_uniform(&mut self) {
+        let n_dim = self.weights.len();
+        // Initialize to even weights:
+        self.weights.clear();
+        assert_eq!(0, self.weights.len());
+        self.weights.resize(n_dim, 1.0 / (n_dim as f64));
+        assert_eq!(n_dim, self.weights.len());
+    }
+
+    fn l1_normalize(&mut self) {
+        let mut sum = 0.0;
+        for w in self.weights.iter() {
+            sum += f64::abs(*w);
+        }
+        if sum > 0.0 {
+            for w in self.weights.iter_mut() {
+                *w /= sum;
+            }
         }
     }
+
+    fn predict(&self, features: &Features) -> f64 {
+        let mut output = 0.0;
+        let weights = &self.weights;
+        match features {
+            Features::Dense32(arr) => {
+                for (feature, weight) in arr.iter().cloned().zip(weights.iter().cloned()) {
+                    output += f64::from(feature) * weight;
+                }
+            }
+            Features::Dense64(arr) => {
+                for (feature, weight) in arr.iter().cloned().zip(weights.iter().cloned()) {
+                    output += feature * weight;
+                }
+            }
+            Features::Sparse32(arr) => {
+                for (idx, feature) in arr.iter().cloned() {
+                    output += f64::from(feature) * weights[idx as usize];
+                }
+            }
+            Features::Sparse64(arr) => {
+                for (idx, feature) in arr.iter().cloned() {
+                    output += feature * weights[idx as usize];
+                }
+            }
+        };
+        output
+    }
+}
+
+impl CoordinateAscentParams {
     fn evaluate_map(
         params: &CoordinateAscentParams,
-        weights: &[f64],
+        model: &DenseLinearRankingModel,
         data_by_query: &HashMap<String, Vec<usize>>,
         data: &[TrainingInstance],
     ) -> f64 {
@@ -206,7 +224,7 @@ impl CoordinateAscentModel {
             let mut ranked_list: Vec<Scored<usize>> = instance_ids
                 .iter()
                 .cloned()
-                .map(|index| Scored::new(data[index].features.eval_linear_model(weights), index))
+                .map(|index| Scored::new(model.predict(&data[index].features), index))
                 .collect();
             ranked_list.sort_unstable_by(|lhs, rhs| rhs.cmp(lhs));
 
@@ -249,14 +267,10 @@ impl CoordinateAscentModel {
         ap_sum / num_queries
     }
 
-    pub fn learn(&mut self, data: Vec<TrainingInstance>) -> f64 {
-        let params = &self.params;
-        println!("params.seed={}", params.seed);
-        let mut rand = Xoshiro256StarStar::seed_from_u64(params.seed);
-        let mut weights: &mut Vec<f64> = &mut self.weights;
-        let mut best_model: Scored<Vec<f64>> = Scored::new(0.0, Vec::new());
+    pub fn learn(&self, data: Vec<TrainingInstance>) -> f64 {
+        let mut rand = Xoshiro256StarStar::seed_from_u64(self.seed);
 
-        let tolerance = NotNan::new(params.tolerance).expect("Tolerance param should not be NaN.");
+        let tolerance = NotNan::new(self.tolerance).expect("Tolerance param should not be NaN.");
 
         let sign = &[1, -1, 0];
 
@@ -281,9 +295,12 @@ impl CoordinateAscentModel {
             .max()
             .expect("No features defined!")
             + 1;
+        
+        let mut model = DenseLinearRankingModel::new(n_dim);
+        let mut best_model = Scored::new(0.0, model.clone());
 
         // The stochasticity in this algorithm comes from the order in which features are visited.
-        let optimization_orders: Vec<Vec<u32>> = (0..params.num_restarts)
+        let optimization_orders: Vec<Vec<u32>> = (0..self.num_restarts)
             .map(|_| {
                 let mut fids: Vec<u32> = features.clone();
                 fids.shuffle(&mut rand);
@@ -291,44 +308,43 @@ impl CoordinateAscentModel {
             })
             .collect();
 
-        if !params.quiet {
+        if !self.quiet {
             println!("---------------------------");
             println!("Training starts...");
             println!("---------------------------");
         }
 
         for (restart, fids) in optimization_orders.iter().enumerate() {
-            if !params.quiet {
+            if !self.quiet {
                 println!(
                     "[+] Random restart #{}/{}...",
                     restart + 1,
-                    params.num_restarts
+                    self.num_restarts
                 );
             }
             let mut consecutive_failures = 0;
 
             // Initialize to even weights:
-            weights.clear();
-            weights.resize(n_dim as usize, 1.0 / f64::from(n_dim));
+            model.reset_uniform();
 
             // Initialize this local best (within current restart cycle):
-            let start_score = Self::evaluate_map(&params, &weights, &data_by_query, &data);
-            let mut current_best = Scored::new(start_score, weights.clone());
+            let start_score = Self::evaluate_map(&self, &model, &data_by_query, &data);
+            let mut current_best = Scored::new(start_score, model.clone());
 
             loop {
                 //There must be at least one feature increasing whose weight helps
-                if weights.len() == 1 {
+                if n_dim == 1 {
                     if consecutive_failures > 0 {
                         break;
                     }
                 } else {
                     // Go until there is no more to try.
-                    if consecutive_failures >= weights.len() - 1 {
+                    if consecutive_failures >= n_dim - 1 {
                         break;
                     }
                 }
 
-                if !params.quiet {
+                if !self.quiet {
                     println!("Shuffle features and optimize!");
                     println!("---------------------------");
                     println!("{:>9}|{:>9}|{:>9}", "Feature", "Weight", "mAP");
@@ -337,18 +353,18 @@ impl CoordinateAscentModel {
 
                 for current_feature in fids {
                     let current_feature = *current_feature as usize;
-                    let orig_weight = weights[current_feature];
+                    let orig_weight = model.weights[current_feature];
                     let mut total_step;
                     let mut best_weight = orig_weight;
                     let mut success = false;
 
                     for dir in sign {
-                        let mut step = params.step_base * f64::from(*dir);
+                        let mut step = self.step_base * f64::from(*dir);
                         if orig_weight != 0.0 && f64::abs(step) > 0.5 * f64::abs(orig_weight) {
-                            step = params.step_base * f64::abs(orig_weight)
+                            step = self.step_base * f64::abs(orig_weight)
                         }
                         total_step = step;
-                        let mut num_iter = params.num_max_iterations;
+                        let mut num_iter = self.num_max_iterations;
                         if *dir == 0 {
                             num_iter = 1;
                             total_step = -orig_weight;
@@ -356,19 +372,19 @@ impl CoordinateAscentModel {
 
                         for feature_trial in 0..num_iter {
                             let w = orig_weight + total_step;
-                            weights[current_feature] = w;
+                            model.weights[current_feature] = w;
                             let score =
-                                Self::evaluate_map(&params, &weights, &data_by_query, &data);
+                                Self::evaluate_map(&self, &model, &data_by_query, &data);
 
-                            if current_best.replace_if_better(score, weights.clone()) {
+                            if current_best.replace_if_better(score, model.clone()) {
                                 success = true;
                                 best_weight = w;
-                                if !params.quiet {
+                                if !self.quiet {
                                     println!("{:>9}|{:>9.3}|{:>9.3}", current_feature, w, score);
                                 }
                             }
                             if feature_trial < num_iter - 1 {
-                                step *= params.step_scale;
+                                step *= self.step_scale;
                                 total_step += step;
                             }
                         }
@@ -378,14 +394,14 @@ impl CoordinateAscentModel {
                         if success {
                             break;
                         } else {
-                            weights[current_feature] = orig_weight;
+                            model.weights[current_feature] = orig_weight;
                         }
                     } // dir
 
                     // Since we've found a better weight value.
-                    weights[current_feature] = best_weight;
-                    if params.normalize {
-                        normalize(&mut weights);
+                    model.weights[current_feature] = best_weight;
+                    if self.normalize {
+                        model.l1_normalize();
                     }
 
                     if success {
@@ -395,7 +411,7 @@ impl CoordinateAscentModel {
                     }
                 } // current_feature
 
-                if !params.quiet {
+                if !self.quiet {
                     println!("---------------------------");
                 }
 
@@ -407,14 +423,14 @@ impl CoordinateAscentModel {
             } // optimize-loop
         }
         
-        *weights = best_model.item.clone();
+        let model = best_model.item.clone();
 
-        if !params.quiet {
+        if !self.quiet {
             println!("---------------------------");
             println!("Finished successfully.");
         }
 
-        Self::evaluate_map(&params, &weights, &data_by_query, &data)
+        Self::evaluate_map(&self, &model, &data_by_query, &data)
     } // learn
 } // impl
 
