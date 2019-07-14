@@ -210,70 +210,22 @@ impl DenseLinearRankingModel {
     }
 }
 
-impl CoordinateAscentParams {
-    fn evaluate_map(
-        params: &CoordinateAscentParams,
-        model: &DenseLinearRankingModel,
-        data_by_query: &HashMap<String, Vec<usize>>,
-        data: &[TrainingInstance],
-    ) -> f64 {
-        let mut num_queries = data_by_query.len() as f64;
-        let mut ap_sum = 0.0;
-        for (qid, instance_ids) in data_by_query.iter() {
-            // Rank data.
-            let mut ranked_list: Vec<Scored<usize>> = instance_ids
-                .iter()
-                .cloned()
-                .map(|index| Scored::new(model.predict(&data[index].features), index))
-                .collect();
-            ranked_list.sort_unstable_by(|lhs, rhs| rhs.cmp(lhs));
+pub struct RankingDataset {
+    instances: Vec<TrainingInstance>,
+    features: Vec<u32>,
+    n_dim: u32,
+    data_by_query: HashMap<String, Vec<usize>>,
+}
 
-            // Determine the total number of relevant documents:
-            let param_num_relevant: Option<usize> = params
-                .total_relevant_by_qid
-                .as_ref()
-                .and_then(|data| data.get(qid))
-                .map(|num| *num as usize);
-            // Calculate if unavailable in config:
-            let num_relevant: usize = param_num_relevant.unwrap_or_else(|| {
-                ranked_list
-                    .iter()
-                    .filter(|scored| data[scored.item].is_relevant())
-                    .count()
-            });
-
-            // In theory, we should skip these queries!
-            if num_relevant == 0 {
-                continue;
-            }
-
-            // Compute AP:
-            let mut recall_points = 0;
-            let mut sum_precision = 0.0;
-            for rank in ranked_list
-                .iter()
-                .map(|scored| data[scored.item].is_relevant())
-                .enumerate()
-                .filter(|(_, rel)| *rel)
-                .map(|(i, _)| i + 1)
-            {
-                recall_points += 1;
-                sum_precision += f64::from(recall_points) / (rank as f64);
-            }
-            ap_sum += sum_precision / (num_relevant as f64);
-        }
-
-        // Compute Mean AP:
-        ap_sum / num_queries
+impl RankingDataset {
+    pub fn import(data: Vec<libsvm::Instance>) -> Result<Self, &'static str> {
+        let instances: Result<Vec<_>, _> = data
+            .into_iter()
+            .map(|i| TrainingInstance::try_new(i))
+            .collect();
+        Ok(Self::new(instances?))
     }
-
-    pub fn learn(&self, data: Vec<TrainingInstance>) -> f64 {
-        let mut rand = Xoshiro256StarStar::seed_from_u64(self.seed);
-
-        let tolerance = NotNan::new(self.tolerance).expect("Tolerance param should not be NaN.");
-
-        let sign = &[1, -1, 0];
-
+    pub fn new(data: Vec<TrainingInstance>) -> Self {
         // Collect features that are actually present.
         let mut features: HashSet<u32> = HashSet::new();
         // Collect training instances by the query.
@@ -295,14 +247,81 @@ impl CoordinateAscentParams {
             .max()
             .expect("No features defined!")
             + 1;
+
+        Self { instances: data, features, n_dim, data_by_query }
+    }
+}
+
+impl CoordinateAscentParams {
+    fn evaluate_map(
+        params: &CoordinateAscentParams,
+        model: &DenseLinearRankingModel,
+        data: &RankingDataset,
+    ) -> f64 {
+        let data_by_query = &data.data_by_query;
+        let mut num_queries = data_by_query.len() as f64;
+        let mut ap_sum = 0.0;
+        for (qid, instance_ids) in data_by_query.iter() {
+            // Rank data.
+            let mut ranked_list: Vec<Scored<usize>> = instance_ids
+                .iter()
+                .cloned()
+                .map(|index| Scored::new(model.predict(&data.instances[index].features), index))
+                .collect();
+            ranked_list.sort_unstable_by(|lhs, rhs| rhs.cmp(lhs));
+
+            // Determine the total number of relevant documents:
+            let param_num_relevant: Option<usize> = params
+                .total_relevant_by_qid
+                .as_ref()
+                .and_then(|data| data.get(qid))
+                .map(|num| *num as usize);
+            // Calculate if unavailable in config:
+            let num_relevant: usize = param_num_relevant.unwrap_or_else(|| {
+                ranked_list
+                    .iter()
+                    .filter(|scored| data.instances[scored.item].is_relevant())
+                    .count()
+            });
+
+            // In theory, we should skip these queries!
+            if num_relevant == 0 {
+                continue;
+            }
+
+            // Compute AP:
+            let mut recall_points = 0;
+            let mut sum_precision = 0.0;
+            for rank in ranked_list
+                .iter()
+                .map(|scored| data.instances[scored.item].is_relevant())
+                .enumerate()
+                .filter(|(_, rel)| *rel)
+                .map(|(i, _)| i + 1)
+            {
+                recall_points += 1;
+                sum_precision += f64::from(recall_points) / (rank as f64);
+            }
+            ap_sum += sum_precision / (num_relevant as f64);
+        }
+
+        // Compute Mean AP:
+        ap_sum / num_queries
+    }
+
+    pub fn learn(&self, data: &RankingDataset) -> f64 {
+        let mut rand = Xoshiro256StarStar::seed_from_u64(self.seed);
+        let tolerance = NotNan::new(self.tolerance).expect("Tolerance param should not be NaN.");
+
+        let sign = &[1, -1, 0];
         
-        let mut model = DenseLinearRankingModel::new(n_dim);
+        let mut model = DenseLinearRankingModel::new(data.n_dim);
         let mut best_model = Scored::new(0.0, model.clone());
 
         // The stochasticity in this algorithm comes from the order in which features are visited.
         let optimization_orders: Vec<Vec<u32>> = (0..self.num_restarts)
             .map(|_| {
-                let mut fids: Vec<u32> = features.clone();
+                let mut fids: Vec<u32> = data.features.clone();
                 fids.shuffle(&mut rand);
                 fids
             })
@@ -328,18 +347,18 @@ impl CoordinateAscentParams {
             model.reset_uniform();
 
             // Initialize this local best (within current restart cycle):
-            let start_score = Self::evaluate_map(&self, &model, &data_by_query, &data);
+            let start_score = Self::evaluate_map(&self, &model, &data);
             let mut current_best = Scored::new(start_score, model.clone());
 
             loop {
                 //There must be at least one feature increasing whose weight helps
-                if n_dim == 1 {
+                if fids.len() == 1 {
                     if consecutive_failures > 0 {
                         break;
                     }
                 } else {
                     // Go until there is no more to try.
-                    if consecutive_failures >= n_dim - 1 {
+                    if consecutive_failures >= fids.len() - 1 {
                         break;
                     }
                 }
@@ -374,7 +393,7 @@ impl CoordinateAscentParams {
                             let w = orig_weight + total_step;
                             model.weights[current_feature] = w;
                             let score =
-                                Self::evaluate_map(&self, &model, &data_by_query, &data);
+                                Self::evaluate_map(&self, &model, &data);
 
                             if current_best.replace_if_better(score, model.clone()) {
                                 success = true;
@@ -430,7 +449,7 @@ impl CoordinateAscentParams {
             println!("Finished successfully.");
         }
 
-        Self::evaluate_map(&self, &model, &data_by_query, &data)
+        Self::evaluate_map(&self, &model, &data)
     } // learn
 } // impl
 

@@ -54,13 +54,9 @@ fn main() -> Result<(), Box<Error>> {
     let mut reader = io_helper::open_reader(input)?;
 
     let instances: Vec<libsvm::Instance> = libsvm::collect_reader(&mut reader)?;
-    let instances: Result<Vec<_>, _> = instances
-        .into_iter()
-        .map(|i| TrainingInstance::try_new(i))
-        .collect();
-    let instances = instances?;
+    let dataset = RankingDataset::import(instances)?;
 
-    let final_score = params.learn(instances);
+    let final_score = params.learn(&dataset);
     println!("TRAINING mAP: {:.3}", final_score);
     Ok(())
 }
