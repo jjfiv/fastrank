@@ -1,6 +1,8 @@
 use crate::libsvm;
 use ordered_float::NotNan;
 use rand::prelude::*;
+use rand_xoshiro::rand_core::SeedableRng;
+use rand_xoshiro::Xoshiro256StarStar;
 use std::collections::{HashMap, HashSet};
 
 pub enum Features {
@@ -72,7 +74,6 @@ impl Features {
                     output += feature * weights[idx as usize];
                 }
             }
-            _ => {}
         };
         output
     }
@@ -105,13 +106,15 @@ impl TrainingInstance {
 
 #[derive(Clone, Debug)]
 pub struct CoordinateAscentParams {
-    pub num_restarts: i32,
-    pub num_max_iterations: i32,
+    pub num_restarts: u32,
+    pub num_max_iterations: u32,
     pub step_base: f64,
     pub step_scale: f64,
     pub tolerance: f64,
-    pub quiet: bool,
+    pub seed: u64,
+    pub normalize: bool,
     pub total_relevant_by_qid: Option<HashMap<String, u32>>,
+    pub quiet: bool,
 }
 
 impl Default for CoordinateAscentParams {
@@ -122,6 +125,8 @@ impl Default for CoordinateAscentParams {
             step_base: 0.05,
             step_scale: 2.0,
             tolerance: 0.001,
+            seed: thread_rng().next_u64(),
+            normalize: false,
             quiet: false,
             total_relevant_by_qid: None,
         }
@@ -232,7 +237,7 @@ impl CoordinateAscentModel {
                 .map(|scored| data[scored.item].is_relevant())
                 .enumerate()
                 .filter(|(_, rel)| *rel)
-                .map(|(i, _)| i+1)
+                .map(|(i, _)| i + 1)
             {
                 recall_points += 1;
                 sum_precision += f64::from(recall_points) / (rank as f64);
@@ -244,8 +249,10 @@ impl CoordinateAscentModel {
         ap_sum / num_queries
     }
 
-    pub fn learn(&mut self, data: Vec<TrainingInstance>) {
+    pub fn learn(&mut self, data: Vec<TrainingInstance>) -> f64 {
         let params = &self.params;
+        println!("params.seed={}", params.seed);
+        let mut rand = Xoshiro256StarStar::seed_from_u64(params.seed);
         let mut weights: &mut Vec<f64> = &mut self.weights;
         let mut best_model: Scored<Vec<f64>> = Scored::new(0.0, Vec::new());
 
@@ -264,21 +271,33 @@ impl CoordinateAscentModel {
                 .push(i);
             features.extend(inst.features.ids());
         }
+        let mut features: Vec<u32> = features.iter().cloned().collect();
+        features.sort_unstable();
 
+        // Calculate the number of features, including any missing ones, so we can have a dense linear model.
         let n_dim = features
             .iter()
             .cloned()
             .max()
             .expect("No features defined!")
             + 1;
-        let mut rand = thread_rng();
+
+        // The stochasticity in this algorithm comes from the order in which features are visited.
+        let optimization_orders: Vec<Vec<u32>> = (0..params.num_restarts)
+            .map(|_| {
+                let mut fids: Vec<u32> = features.clone();
+                fids.shuffle(&mut rand);
+                fids
+            })
+            .collect();
 
         if !params.quiet {
             println!("---------------------------");
             println!("Training starts...");
             println!("---------------------------");
         }
-        for restart in 0..params.num_restarts {
+
+        for (restart, fids) in optimization_orders.iter().enumerate() {
             if !params.quiet {
                 println!(
                     "[+] Random restart #{}/{}...",
@@ -316,14 +335,11 @@ impl CoordinateAscentModel {
                     println!("---------------------------");
                 }
 
-                let mut fids: Vec<u32> = features.iter().cloned().collect();
-                fids.shuffle(&mut rand);
-
                 for current_feature in fids {
-                    let current_feature = current_feature as usize;
+                    let current_feature = *current_feature as usize;
                     let orig_weight = weights[current_feature];
-                    let mut total_step = 0.0;
-                    let mut best_total_step = 0.0;
+                    let mut total_step;
+                    let mut best_weight = orig_weight;
                     let mut success = false;
 
                     for dir in sign {
@@ -346,7 +362,7 @@ impl CoordinateAscentModel {
 
                             if current_best.replace_if_better(score, weights.clone()) {
                                 success = true;
-                                best_total_step = total_step;
+                                best_weight = w;
                                 if !params.quiet {
                                     println!("{:>9}|{:>9.3}|{:>9.3}", current_feature, w, score);
                                 }
@@ -366,17 +382,19 @@ impl CoordinateAscentModel {
                         }
                     } // dir
 
-                    if success {
-                        // Since we've found a better weight value.
-                        consecutive_failures = 0;
-                        weights[current_feature] = orig_weight + best_total_step;
+                    // Since we've found a better weight value.
+                    weights[current_feature] = best_weight;
+                    if params.normalize {
                         normalize(&mut weights);
-                        current_best.item = weights.clone();
+                    }
+
+                    if success {
+                        consecutive_failures = 0;
                     } else {
                         consecutive_failures += 1;
-                        weights[current_feature] = orig_weight;
                     }
                 } // current_feature
+
                 if !params.quiet {
                     println!("---------------------------");
                 }
@@ -387,20 +405,18 @@ impl CoordinateAscentModel {
 
                 best_model.use_best(&current_best);
             } // optimize-loop
-
-            *weights = best_model.item.clone();
-
-            if !params.quiet {
-                println!("---------------------------");
-                println!("Finished successfully.");
-                println!(
-                    "mAP: {}",
-                    Self::evaluate_map(&params, &weights, &data_by_query, &data)
-                );
-            }
         }
-    }
-}
+        
+        *weights = best_model.item.clone();
+
+        if !params.quiet {
+            println!("---------------------------");
+            println!("Finished successfully.");
+        }
+
+        Self::evaluate_map(&params, &weights, &data_by_query, &data)
+    } // learn
+} // impl
 
 #[cfg(test)]
 mod tests {
