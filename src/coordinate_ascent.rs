@@ -1,82 +1,11 @@
-use crate::libsvm;
 use ordered_float::NotNan;
+use crate::{Model, Scored};
 use rand::prelude::*;
 use rand_xoshiro::rand_core::SeedableRng;
 use rand_xoshiro::Xoshiro256StarStar;
-use std::collections::{HashMap, HashSet};
-
-pub enum Features {
-    Dense32(Vec<f32>),
-    Dense64(Vec<f64>),
-    /// Sparse 32-bit representation; must be sorted!
-    Sparse32(Vec<(u32, f32)>),
-    /// Sparse 64-bit representation; must be sorted!
-    Sparse64(Vec<(u32, f64)>),
-}
-
-impl Features {
-    pub fn get(&self, idx: u32) -> Option<f64> {
-        match self {
-            Features::Dense32(arr) => Some(f64::from(arr[idx as usize])),
-            Features::Dense64(arr) => Some(arr[idx as usize]),
-            Features::Sparse32(features) => {
-                for (fidx, val) in features.iter() {
-                    if *fidx == idx {
-                        return Some(f64::from(*val));
-                    } else if *fidx > idx {
-                        break;
-                    }
-                }
-                None
-            }
-            Features::Sparse64(features) => {
-                for (fidx, val) in features.iter() {
-                    if *fidx == idx {
-                        return Some(*val);
-                    } else if *fidx > idx {
-                        break;
-                    }
-                }
-                None
-            }
-        }
-    }
-    pub fn ids(&self) -> Vec<u32> {
-        let mut features: Vec<u32> = Vec::new();
-        match self {
-            Features::Dense32(arr) => features.extend(0..(arr.len() as u32)),
-            Features::Dense64(arr) => features.extend(0..(arr.len() as u32)),
-            Features::Sparse32(arr) => features.extend(arr.iter().map(|(idx, _)| *idx)),
-            Features::Sparse64(arr) => features.extend(arr.iter().map(|(idx, _)| *idx)),
-        }
-        features
-    }
-}
-
-pub struct TrainingInstance {
-    pub gain: f32,
-    pub qid: String,
-    pub features: Features,
-}
-
-impl TrainingInstance {
-    pub fn try_new(libsvm: libsvm::Instance) -> Result<TrainingInstance, &'static str> {
-        Ok(TrainingInstance {
-            gain: libsvm.label,
-            qid: libsvm.query.ok_or("Missing qid")?,
-            features: Features::Sparse32(
-                libsvm
-                    .features
-                    .into_iter()
-                    .map(|f| (f.idx, f.value))
-                    .collect(),
-            ),
-        })
-    }
-    fn is_relevant(&self) -> bool {
-        self.gain > 0.0
-    }
-}
+use std::collections::HashMap;
+use crate::dataset::*;
+use crate::evaluators::Evaluator;
 
 #[derive(Clone, Debug)]
 pub struct CoordinateAscentParams {
@@ -103,50 +32,6 @@ impl Default for CoordinateAscentParams {
             normalize: false,
             quiet: false,
             total_relevant_by_qid: None,
-        }
-    }
-}
-
-#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
-pub struct Scored<T: Clone> {
-    pub score: NotNan<f64>,
-    pub item: T,
-}
-impl<T: Clone> Scored<T> {
-    fn new(score: f64, item: T) -> Self {
-        Self {
-            score: NotNan::new(score).expect("NaN found!"),
-            item,
-        }
-    }
-    fn replace_if_better(&mut self, score: f64, item: T) -> bool {
-        if let Ok(score) = NotNan::new(score) {
-            if score > self.score {
-                self.item = item;
-                self.score = score;
-                return true;
-            }
-        }
-        false
-    }
-    fn use_best(&mut self, other: &Scored<T>) {
-        if self.score > other.score {
-            return;
-        } else {
-            self.score = other.score;
-            self.item = other.item.clone();
-        }
-    }
-}
-
-fn normalize(weights: &mut [f64]) {
-    let mut sum = 0.0;
-    for w in weights.iter() {
-        sum += f64::abs(*w);
-    }
-    if sum > 0.0 {
-        for w in weights.iter_mut() {
-            *w /= sum;
         }
     }
 }
@@ -210,106 +95,15 @@ impl DenseLinearRankingModel {
     }
 }
 
-pub struct RankingDataset {
-    instances: Vec<TrainingInstance>,
-    features: Vec<u32>,
-    n_dim: u32,
-    data_by_query: HashMap<String, Vec<usize>>,
-}
-
-impl RankingDataset {
-    pub fn import(data: Vec<libsvm::Instance>) -> Result<Self, &'static str> {
-        let instances: Result<Vec<_>, _> = data
-            .into_iter()
-            .map(|i| TrainingInstance::try_new(i))
-            .collect();
-        Ok(Self::new(instances?))
-    }
-    pub fn new(data: Vec<TrainingInstance>) -> Self {
-        // Collect features that are actually present.
-        let mut features: HashSet<u32> = HashSet::new();
-        // Collect training instances by the query.
-        let mut data_by_query: HashMap<String, Vec<usize>> = HashMap::new();
-        for (i, inst) in data.iter().enumerate() {
-            data_by_query
-                .entry(inst.qid.clone())
-                .or_insert(Vec::new())
-                .push(i);
-            features.extend(inst.features.ids());
-        }
-        let mut features: Vec<u32> = features.iter().cloned().collect();
-        features.sort_unstable();
-
-        // Calculate the number of features, including any missing ones, so we can have a dense linear model.
-        let n_dim = features
-            .iter()
-            .cloned()
-            .max()
-            .expect("No features defined!")
-            + 1;
-
-        Self { instances: data, features, n_dim, data_by_query }
+impl Model for DenseLinearRankingModel {
+    fn score(&self, features: &Features) -> f64 {
+        self.predict(features)
     }
 }
+
 
 impl CoordinateAscentParams {
-    fn evaluate_map(
-        params: &CoordinateAscentParams,
-        model: &DenseLinearRankingModel,
-        data: &RankingDataset,
-    ) -> f64 {
-        let data_by_query = &data.data_by_query;
-        let mut num_queries = data_by_query.len() as f64;
-        let mut ap_sum = 0.0;
-        for (qid, instance_ids) in data_by_query.iter() {
-            // Rank data.
-            let mut ranked_list: Vec<Scored<usize>> = instance_ids
-                .iter()
-                .cloned()
-                .map(|index| Scored::new(model.predict(&data.instances[index].features), index))
-                .collect();
-            ranked_list.sort_unstable_by(|lhs, rhs| rhs.cmp(lhs));
-
-            // Determine the total number of relevant documents:
-            let param_num_relevant: Option<usize> = params
-                .total_relevant_by_qid
-                .as_ref()
-                .and_then(|data| data.get(qid))
-                .map(|num| *num as usize);
-            // Calculate if unavailable in config:
-            let num_relevant: usize = param_num_relevant.unwrap_or_else(|| {
-                ranked_list
-                    .iter()
-                    .filter(|scored| data.instances[scored.item].is_relevant())
-                    .count()
-            });
-
-            // In theory, we should skip these queries!
-            if num_relevant == 0 {
-                continue;
-            }
-
-            // Compute AP:
-            let mut recall_points = 0;
-            let mut sum_precision = 0.0;
-            for rank in ranked_list
-                .iter()
-                .map(|scored| data.instances[scored.item].is_relevant())
-                .enumerate()
-                .filter(|(_, rel)| *rel)
-                .map(|(i, _)| i + 1)
-            {
-                recall_points += 1;
-                sum_precision += f64::from(recall_points) / (rank as f64);
-            }
-            ap_sum += sum_precision / (num_relevant as f64);
-        }
-
-        // Compute Mean AP:
-        ap_sum / num_queries
-    }
-
-    pub fn learn(&self, data: &RankingDataset) -> f64 {
+    pub fn learn(&self, data: &RankingDataset, evaluator: &Evaluator) -> f64 {
         let mut rand = Xoshiro256StarStar::seed_from_u64(self.seed);
         let tolerance = NotNan::new(self.tolerance).expect("Tolerance param should not be NaN.");
 
@@ -347,7 +141,7 @@ impl CoordinateAscentParams {
             model.reset_uniform();
 
             // Initialize this local best (within current restart cycle):
-            let start_score = Self::evaluate_map(&self, &model, &data);
+            let start_score = evaluator.score(&model, &data);
             let mut current_best = Scored::new(start_score, model.clone());
 
             loop {
@@ -392,8 +186,7 @@ impl CoordinateAscentParams {
                         for feature_trial in 0..num_iter {
                             let w = orig_weight + total_step;
                             model.weights[current_feature] = w;
-                            let score =
-                                Self::evaluate_map(&self, &model, &data);
+                            let score = evaluator.score(&model, &data);
 
                             if current_best.replace_if_better(score, model.clone()) {
                                 success = true;
@@ -449,14 +242,6 @@ impl CoordinateAscentParams {
             println!("Finished successfully.");
         }
 
-        Self::evaluate_map(&self, &model, &data)
+        evaluator.score(&model, &data)
     } // learn
 } // impl
-
-#[cfg(test)]
-mod tests {
-    #[test]
-    fn it_works() {
-        assert_eq!(2 + 2, 4);
-    }
-}

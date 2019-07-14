@@ -3,6 +3,8 @@ use fastrank::coordinate_ascent::*;
 use fastrank::io_helper;
 use fastrank::libsvm;
 use std::error::Error;
+use fastrank::dataset::RankingDataset;
+use fastrank::evaluators::MeanAveragePrecision;
 
 fn main() -> Result<(), Box<Error>> {
     let matches = App::new("coordinate_ascent_learn")
@@ -53,10 +55,12 @@ fn main() -> Result<(), Box<Error>> {
 
     let mut reader = io_helper::open_reader(input)?;
 
+
     let instances: Vec<libsvm::Instance> = libsvm::collect_reader(&mut reader)?;
     let dataset = RankingDataset::import(instances)?;
 
-    let final_score = params.learn(&dataset);
+    let evaluator = MeanAveragePrecision::new(&dataset, params.total_relevant_by_qid.as_ref());
+    let final_score = params.learn(&dataset, &evaluator);
     println!("TRAINING mAP: {:.3}", final_score);
     Ok(())
 }
