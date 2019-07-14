@@ -4,8 +4,49 @@ use crate::Model;
 use crate::Scored;
 
 pub trait Evaluator {
+    fn name(&self) -> String;
     fn score(&self, model: &Model, dataset: &RankingDataset) -> f64;
 }
+
+pub struct ReciprocalRank;
+
+impl Evaluator for ReciprocalRank {
+    fn name(&self) -> String {
+        String::from("RR")
+    }
+    fn score(&self, model: &Model, dataset: &RankingDataset) -> f64 {
+        let mut rr_sum = 0.0;
+        let num_queries = dataset.data_by_query.len() as f64;
+
+        for (qid, instance_ids) in dataset.data_by_query.iter() {
+            // Rank data.
+            let mut ranked_list: Vec<Scored<usize>> = instance_ids
+                .iter()
+                .cloned()
+                .map(|index| Scored::new(model.score(&dataset.instances[index].features), index))
+                .collect();
+            ranked_list.sort_unstable_by(|lhs, rhs| rhs.cmp(lhs));
+            
+            // Compute RR:
+            let mut recip_rank = 0.0;
+            if let Some(rel_rank) = ranked_list
+                .iter()
+                .map(|scored| dataset.instances[scored.item].is_relevant())
+                .enumerate()
+                .filter(|(_, rel)| *rel)
+                .nth(0)
+                .map(|(i, _)| i + 1) {
+                recip_rank = 1.0 / (rel_rank as f64)
+            }
+
+            rr_sum += recip_rank;
+        }
+
+        // Compute Mean RR:
+        rr_sum / num_queries
+    }
+}
+
 
 pub struct MeanAveragePrecision {
     /// Norms are the number of relevant by query for mAP.
@@ -41,6 +82,9 @@ impl MeanAveragePrecision {
 }
 
 impl Evaluator for MeanAveragePrecision {
+    fn name(&self) -> String {
+        String::from("mAP")
+    }
     fn score(&self, model: &Model, dataset: &RankingDataset) -> f64 {
         let mut ap_sum = 0.0;
 

@@ -3,7 +3,6 @@ use crate::{Model, Scored};
 use rand::prelude::*;
 use rand_xoshiro::rand_core::SeedableRng;
 use rand_xoshiro::Xoshiro256StarStar;
-use std::collections::HashMap;
 use crate::dataset::*;
 use crate::evaluators::Evaluator;
 
@@ -16,7 +15,6 @@ pub struct CoordinateAscentParams {
     pub tolerance: f64,
     pub seed: u64,
     pub normalize: bool,
-    pub total_relevant_by_qid: Option<HashMap<String, u32>>,
     pub quiet: bool,
 }
 
@@ -31,7 +29,6 @@ impl Default for CoordinateAscentParams {
             seed: thread_rng().next_u64(),
             normalize: false,
             quiet: false,
-            total_relevant_by_qid: None,
         }
     }
 }
@@ -101,9 +98,9 @@ impl Model for DenseLinearRankingModel {
     }
 }
 
-
 impl CoordinateAscentParams {
-    pub fn learn(&self, data: &RankingDataset, evaluator: &Evaluator) -> f64 {
+    pub fn learn(&self, data: &RankingDataset, evaluator: &Evaluator) -> Box<Model> {
+        let evaluator_name = evaluator.name();
         let mut rand = Xoshiro256StarStar::seed_from_u64(self.seed);
         let tolerance = NotNan::new(self.tolerance).expect("Tolerance param should not be NaN.");
 
@@ -160,7 +157,7 @@ impl CoordinateAscentParams {
                 if !self.quiet {
                     println!("Shuffle features and optimize!");
                     println!("---------------------------");
-                    println!("{:>9}|{:>9}|{:>9}", "Feature", "Weight", "mAP");
+                    println!("{:>9}|{:>9}|{:>9}", "Feature", "Weight", evaluator_name);
                     println!("---------------------------");
                 }
 
@@ -235,13 +232,11 @@ impl CoordinateAscentParams {
             } // optimize-loop
         }
         
-        let model = best_model.item.clone();
-
         if !self.quiet {
             println!("---------------------------");
             println!("Finished successfully.");
         }
 
-        evaluator.score(&model, &data)
+        Box::new(best_model.item)
     } // learn
 } // impl

@@ -4,7 +4,7 @@ use fastrank::io_helper;
 use fastrank::libsvm;
 use std::error::Error;
 use fastrank::dataset::RankingDataset;
-use fastrank::evaluators::MeanAveragePrecision;
+use fastrank::evaluators::*;
 
 fn main() -> Result<(), Box<Error>> {
     let matches = App::new("coordinate_ascent_learn")
@@ -30,6 +30,7 @@ fn main() -> Result<(), Box<Error>> {
                 .short("t")
                 .takes_value(true),
         )
+        .arg(Arg::with_name("training_measure").long("train_with").long("metric2t").takes_value(true))
         .arg(Arg::with_name("quiet").long("quiet").short("q"))
         .get_matches();
 
@@ -59,8 +60,17 @@ fn main() -> Result<(), Box<Error>> {
     let instances: Vec<libsvm::Instance> = libsvm::collect_reader(&mut reader)?;
     let dataset = RankingDataset::import(instances)?;
 
-    let evaluator = MeanAveragePrecision::new(&dataset, params.total_relevant_by_qid.as_ref());
-    let final_score = params.learn(&dataset, &evaluator);
-    println!("TRAINING mAP: {:.3}", final_score);
+    let measure = matches.value_of("training_measure").unwrap_or("map").to_lowercase();
+    // TODO: support at rank syntax: rr@10
+    let evaluator: Box<Evaluator> = match measure.as_str() {
+        // TODO: support loading qrel file norms
+        "ap" | "map" => Box::new(MeanAveragePrecision::new(&dataset, None)),
+        "rr" | "mrr" => Box::new(ReciprocalRank),
+        _ => panic!("Invalid training measure: \"{}\"", measure)
+    };
+    let model = params.learn(&dataset, evaluator.as_ref());
+    println!("Training Performance:");
+    println!("    mAP: {:.3}", MeanAveragePrecision::new(&dataset, None).score(model.as_ref(), &dataset));
+    println!("    mRR: {:.3}", ReciprocalRank.score(model.as_ref(), &dataset));
     Ok(())
 }
