@@ -9,7 +9,7 @@ pub mod evaluators;
 
 pub mod io_helper;
 
-pub trait Model {
+pub trait Model : std::fmt::Debug {
     fn score(&self, features: &dataset::Features) -> f64;
 }
 

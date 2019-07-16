@@ -1,12 +1,28 @@
 use std::collections::HashMap;
 use ordered_float::NotNan;
 use crate::dataset::*;
+use std::cmp::Ordering;
 
-#[derive(PartialEq, PartialOrd, Eq, Ord)]
+#[derive(PartialEq, PartialOrd, Eq)]
 pub struct RankedInstance {
     pub score: NotNan<f64>,
     pub gain: NotNan<f32>,
     pub identifier: u32,
+}
+
+/// Natural sort: first by socre, descending, then by gain ascending (yielding pessimistic scores on ties), finally by identifier.
+impl Ord for RankedInstance {
+    fn cmp(&self, other: &RankedInstance) -> Ordering {
+        let cmp = other.score.cmp(&self.score);
+        if cmp != Ordering::Equal {
+            return cmp;
+        }
+        let cmp = self.gain.cmp(&other.gain);
+        if cmp != Ordering::Equal {
+            return cmp;
+        }
+        self.identifier.cmp(&other.identifier)
+    }
 }
 
 impl RankedInstance {

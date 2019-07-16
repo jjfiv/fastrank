@@ -69,6 +69,7 @@ fn main() -> Result<(), Box<Error>> {
         _ => panic!("Invalid training measure: \"{}\"", measure)
     };
     let model = params.learn(&dataset, evaluator.as_ref());
+    println!("MODEL {:?}", model);
     println!("Training Performance:");
     println!("    mAP: {:.3}", dataset.evaluate_mean(model.as_ref(), &AveragePrecision::new(&dataset, None)));
     println!("    mRR: {:.3}", dataset.evaluate_mean(model.as_ref(), &ReciprocalRank));

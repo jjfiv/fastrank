@@ -98,7 +98,7 @@ impl RankingDataset {
                 RankedInstance::new(prediction.unwrap_or(worst_prediction), self.instances[index].gain, index as u32)
             }).collect();
             // Sort largest to smallest:
-            ranked_list.sort_unstable_by(|lhs, rhs| rhs.cmp(lhs));
+            ranked_list.sort_unstable();
             sum_score += evaluator.score(&qid, &ranked_list);
         }
         sum_score / num_scores
