@@ -1,8 +1,7 @@
-use ordered_float::NotNan;
 use crate::io_helper;
+use ordered_float::NotNan;
 use std::collections::HashMap;
 use std::sync::Arc;
-use std::io;
 
 #[derive(Clone)]
 pub struct QueryJudgments {
@@ -11,20 +10,32 @@ pub struct QueryJudgments {
 
 impl QueryJudgments {
     fn new(data: HashMap<String, NotNan<f32>>) -> Self {
-        Self { docid_to_rel: Arc::new(data) }
+        Self {
+            docid_to_rel: Arc::new(data),
+        }
     }
     pub fn num_judged(&self) -> u32 {
         self.docid_to_rel.len() as u32
     }
     pub fn num_relevant(&self) -> u32 {
         self.docid_to_rel
-        .iter()
-        .map(|(_,gain)| gain)
-        .filter(|gain| gain.into_inner()>0.0)
-        .count() as u32
+            .iter()
+            .map(|(_, gain)| gain)
+            .filter(|gain| gain.into_inner() > 0.0)
+            .count() as u32
     }
     pub fn get_gain(&self, docid: &str) -> NotNan<f32> {
-        *self.docid_to_rel.get(docid).unwrap_or(&NotNan::new(0.0).unwrap())
+        *self
+            .docid_to_rel
+            .get(docid)
+            .unwrap_or(&NotNan::new(0.0).unwrap())
+    }
+    pub fn gain_vector(&self) -> Vec<NotNan<f32>> {
+        self.docid_to_rel
+            .values()
+            .filter(|g| g.into_inner() > 0.0)
+            .cloned()
+            .collect()
     }
 }
 
@@ -35,7 +46,9 @@ pub struct QuerySetJudgments {
 
 impl QuerySetJudgments {
     fn new(data: HashMap<String, QueryJudgments>) -> Self {
-        Self { query_to_judgments: Arc::new(data) }
+        Self {
+            query_to_judgments: Arc::new(data),
+        }
     }
     pub fn get(&self, qid: &str) -> Option<QueryJudgments> {
         self.query_to_judgments.get(qid).cloned()
@@ -59,12 +72,16 @@ pub fn read_file(path: &str) -> Result<QuerySetJudgments, Box<std::error::Error>
         let qid = row[0].to_string();
         let _unused = row[1];
         let docid = row[2].to_string();
-        let gain = row[3].parse::<f32>().map_err(|_| format!("{}:{}: Invalid relevance judgment {}", path, num, row[3]))?;
-        let gain = NotNan::new(gain).map_err(|_| format!("{}:{}: NaN relevance judgment.", path, num))?;
-        
-        output.entry(qid)
-          .or_insert_with(|| HashMap::new())
-          .insert(docid, gain);
+        let gain = row[3]
+            .parse::<f32>()
+            .map_err(|_| format!("{}:{}: Invalid relevance judgment {}", path, num, row[3]))?;
+        let gain =
+            NotNan::new(gain).map_err(|_| format!("{}:{}: NaN relevance judgment.", path, num))?;
+
+        output
+            .entry(qid)
+            .or_insert_with(|| HashMap::new())
+            .insert(docid, gain);
         line.clear();
     }
 

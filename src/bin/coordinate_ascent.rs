@@ -67,18 +67,27 @@ fn main() -> Result<(), Box<Error>> {
     let instances: Vec<libsvm::Instance> = libsvm::collect_reader(&mut reader)?;
     let dataset = RankingDataset::import(instances)?;
 
+    let m_ap = AveragePrecision::new(&dataset, judgments.clone());
+    let m_rr = ReciprocalRank;
+    let ndcg1000 = NDCG::new(1000, &dataset, judgments.clone());
+    let ndcg10 = NDCG::new(10, &dataset, judgments.clone());
+
     let measure = matches.value_of("training_measure").unwrap_or("map").to_lowercase();
     // TODO: support at rank syntax: rr@10
-    let evaluator: Box<Evaluator> = match measure.as_str() {
+    let evaluator: &Evaluator = match measure.as_str() {
         // TODO: support loading qrel file norms
-        "ap" | "map" => Box::new(AveragePrecision::new(&dataset, judgments.clone())),
-        "rr" | "mrr" => Box::new(ReciprocalRank),
+        "ap" | "map" => &m_ap,
+        "rr" | "mrr" => &m_rr,
+        "ndcg" | "ndcg@1000" => &ndcg1000,
+        "ndcg@10" => &ndcg10,
         _ => panic!("Invalid training measure: \"{}\"", measure)
     };
-    let model = params.learn(&dataset, evaluator.as_ref());
+    let model = params.learn(&dataset, evaluator);
     println!("MODEL {:?}", model);
     println!("Training Performance:");
-    println!("    mAP: {:.3}", dataset.evaluate_mean(model.as_ref(), &AveragePrecision::new(&dataset, judgments.clone())));
-    println!("    mRR: {:.3}", dataset.evaluate_mean(model.as_ref(), &ReciprocalRank));
+    println!("    mAP: {:.3}", dataset.evaluate_mean(model.as_ref(), &m_ap));
+    println!("    mRR: {:.3}", dataset.evaluate_mean(model.as_ref(), &m_rr));
+    println!("    ndcg: {:.3}", dataset.evaluate_mean(model.as_ref(), &ndcg1000));
+    println!("    ndcg@10: {:.3}", dataset.evaluate_mean(model.as_ref(), &ndcg10));
     Ok(())
 }

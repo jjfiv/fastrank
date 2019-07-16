@@ -1,10 +1,10 @@
-use ordered_float::NotNan;
+use crate::dataset::*;
+use crate::evaluators::Evaluator;
 use crate::{Model, Scored};
+use ordered_float::NotNan;
 use rand::prelude::*;
 use rand_xoshiro::rand_core::SeedableRng;
 use rand_xoshiro::Xoshiro256StarStar;
-use crate::dataset::*;
-use crate::evaluators::Evaluator;
 
 #[derive(Clone, Debug)]
 pub struct CoordinateAscentParams {
@@ -33,13 +33,15 @@ impl Default for CoordinateAscentParams {
     }
 }
 
-#[derive(Debug,Clone)]
+#[derive(Debug, Clone)]
 pub struct DenseLinearRankingModel {
     weights: Vec<f64>,
 }
 impl DenseLinearRankingModel {
     fn new(n_dim: u32) -> Self {
-        Self { weights: vec![0.0; n_dim as usize] }
+        Self {
+            weights: vec![0.0; n_dim as usize],
+        }
     }
 
     fn reset_uniform(&mut self) {
@@ -98,14 +100,13 @@ impl Model for DenseLinearRankingModel {
     }
 }
 
-const sign: &[i32] = &[1, -1, 0];
+const SIGN: &[i32] = &[1, -1, 0];
 
 impl CoordinateAscentParams {
     pub fn learn(&self, data: &RankingDataset, evaluator: &Evaluator) -> Box<Model> {
         let evaluator_name = evaluator.name();
         let mut rand = Xoshiro256StarStar::seed_from_u64(self.seed);
         let tolerance = NotNan::new(self.tolerance).expect("Tolerance param should not be NaN.");
-        
         let mut model = DenseLinearRankingModel::new(data.n_dim);
         let mut best_model = Scored::new(0.0, model.clone());
 
@@ -169,7 +170,7 @@ impl CoordinateAscentParams {
                     let mut best_weight = orig_weight;
                     let mut success = false;
 
-                    for dir in sign {
+                    for dir in SIGN {
                         let mut step = self.step_base * f64::from(*dir);
                         if orig_weight != 0.0 && f64::abs(step) > 0.5 * f64::abs(orig_weight) {
                             step = self.step_base * f64::abs(orig_weight)
@@ -232,7 +233,6 @@ impl CoordinateAscentParams {
                 best_model.use_best(&current_best);
             } // optimize-loop
         }
-        
         if !self.quiet {
             println!("---------------------------");
             println!("Finished successfully.");
