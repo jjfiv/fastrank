@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 use ordered_float::NotNan;
 use crate::dataset::*;
+use crate::qrel::QuerySetJudgments;
 use std::cmp::Ordering;
 
 #[derive(PartialEq, PartialOrd, Eq)]
@@ -68,24 +69,23 @@ pub struct NDCG {
 
 pub struct AveragePrecision {
     /// Norms are the number of relevant by query for mAP.
-    query_norms: HashMap<String, usize>,
+    query_norms: HashMap<String, u32>,
 }
 
 impl AveragePrecision {
-    pub fn new(dataset: &RankingDataset, total_relevant_by_qid: Option<&HashMap<String, u32>>) -> Self {
+    pub fn new(dataset: &RankingDataset, judgments: Option<QuerySetJudgments>) -> Self {
         let mut query_norms = HashMap::new();
 
         for (qid, instance_ids) in dataset.data_by_query.iter() {
             // Determine the total number of relevant documents:
-            let param_num_relevant: Option<usize> = total_relevant_by_qid
-                .and_then(|data| data.get(qid))
-                .map(|num| *num as usize);
+            let param_num_relevant: Option<u32> = judgments.as_ref().and_then(|j| j.get(qid))
+                .map(|data| data.num_relevant());
             // Calculate if unavailable in config:
-            let num_relevant: usize = param_num_relevant.unwrap_or_else(|| {
+            let num_relevant: u32 = param_num_relevant.unwrap_or_else(|| {
                 instance_ids
                     .iter()
                     .filter(|index| dataset.instances[**index].is_relevant())
-                    .count()
+                    .count() as u32
             });
 
             if num_relevant > 0 {
@@ -103,7 +103,7 @@ impl Evaluator for AveragePrecision {
     }
     fn score(&self, qid: &str, ranked_list: &[RankedInstance]) -> f64 {
         let num_relevant = self.query_norms.get(qid).cloned().unwrap_or_else(|| 
-            ranked_list.iter().filter(|ri| ri.is_relevant()).count()
+            ranked_list.iter().filter(|ri| ri.is_relevant()).count() as u32
         ); 
 
         if num_relevant == 0 {

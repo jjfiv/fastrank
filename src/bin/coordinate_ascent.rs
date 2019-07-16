@@ -5,6 +5,7 @@ use fastrank::libsvm;
 use std::error::Error;
 use fastrank::dataset::RankingDataset;
 use fastrank::evaluators::*;
+use fastrank::qrel;
 
 fn main() -> Result<(), Box<Error>> {
     let matches = App::new("coordinate_ascent_learn")
@@ -12,6 +13,8 @@ fn main() -> Result<(), Box<Error>> {
         .about("Learn a linear ranking model.")
         .arg(Arg::with_name("TRAIN_FILE").required(true))
         .arg(Arg::with_name("seed").long("seed").takes_value(true))
+        // Optional loading of query relevance files.
+        .arg(Arg::with_name("qrel").long("qrel").takes_value(true))
         .arg(
             Arg::with_name("restarts")
                 .long("num_restarts")
@@ -50,6 +53,10 @@ fn main() -> Result<(), Box<Error>> {
     if let Some(tolerance) = matches.value_of("tolerance") {
         params.tolerance = tolerance.parse::<f64>()?;
     }
+    let judgments = match matches.value_of("qrel") {
+        None => None,
+        Some(path) => Some(qrel::read_file(path)?),
+    };
     let input = matches
         .value_of("TRAIN_FILE")
         .ok_or("You need a training file to learn a model!")?;
@@ -64,14 +71,14 @@ fn main() -> Result<(), Box<Error>> {
     // TODO: support at rank syntax: rr@10
     let evaluator: Box<Evaluator> = match measure.as_str() {
         // TODO: support loading qrel file norms
-        "ap" | "map" => Box::new(AveragePrecision::new(&dataset, None)),
+        "ap" | "map" => Box::new(AveragePrecision::new(&dataset, judgments.clone())),
         "rr" | "mrr" => Box::new(ReciprocalRank),
         _ => panic!("Invalid training measure: \"{}\"", measure)
     };
     let model = params.learn(&dataset, evaluator.as_ref());
     println!("MODEL {:?}", model);
     println!("Training Performance:");
-    println!("    mAP: {:.3}", dataset.evaluate_mean(model.as_ref(), &AveragePrecision::new(&dataset, None)));
+    println!("    mAP: {:.3}", dataset.evaluate_mean(model.as_ref(), &AveragePrecision::new(&dataset, judgments.clone())));
     println!("    mRR: {:.3}", dataset.evaluate_mean(model.as_ref(), &ReciprocalRank));
     Ok(())
 }
