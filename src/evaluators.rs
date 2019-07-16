@@ -41,7 +41,7 @@ impl RankedInstance {
     }
 }
 
-pub trait Evaluator {
+pub trait Evaluator: Send + Sync {
     fn name(&self) -> String;
     fn score(&self, qid: &str, ranked_list: &[RankedInstance]) -> f64;
 }

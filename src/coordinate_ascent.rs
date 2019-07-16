@@ -7,6 +7,7 @@ use rand::prelude::*;
 use rand_xoshiro::rand_core::SeedableRng;
 use rand_xoshiro::Xoshiro256StarStar;
 use std::sync::Arc;
+use rayon::prelude::*;
 
 #[derive(Clone, Debug)]
 pub struct CoordinateAscentParams {
@@ -118,9 +119,101 @@ impl Model for DenseLinearRankingModel {
 
 const SIGN: &[i32] = &[0, -1, 1];
 
+fn optimize_inner<R: Rng>(
+    restart_id: u32, data: &RankingDataset, evaluator: &Evaluator, mut rand: R, params: &CoordinateAscentParams
+) -> Scored<DenseLinearRankingModel> {
+    let quiet = params.quiet;
+    let tolerance = NotNan::new(params.tolerance).unwrap();
+
+    // Initialize to even weights:
+    let mut model = DenseLinearRankingModel::new(data.n_dim);
+    model.reset(params.init_random, &mut rand);
+
+    // Initialize this local best (within current restart cycle):
+    let start_score = data.evaluate_mean(&model, evaluator);
+    let mut current_best = Scored::new(start_score, model.clone());
+
+    loop {
+        // Get new order of features for this optimization pass.
+        let mut fids: Vec<u32> = data.features.clone();
+        fids.shuffle(&mut rand);
+
+        if !quiet {
+            println!("Shuffle features and optimize!");
+            println!("---------------------------");
+            println!("{:>9}|{:>9}|{:>9}", "Feature", "Weight", evaluator.name());
+            println!("---------------------------");
+        }
+
+        let successes = fids
+            .iter()
+            .map(|current_feature| {
+                let start_score = current_best.score;
+                model = current_best.item.clone();
+                if params.normalize {
+                    model.l1_normalize();
+                }
+
+                let current_feature = *current_feature as usize;
+                let orig_weight = model.weights[current_feature];
+                let mut total_step;
+
+                for dir in SIGN {
+                    let mut step = params.step_base * f64::from(*dir);
+                    if orig_weight != 0.0 && step.abs() > 0.5 * f64::abs(orig_weight) {
+                        step = params.step_base * orig_weight.abs() * f64::from(*dir)
+                    }
+                    total_step = step;
+                    let mut num_iter = params.num_max_iterations;
+                    if *dir == 0 {
+                        num_iter = 1;
+                        total_step = -orig_weight;
+                    }
+
+                    for _ in 0..num_iter {
+                        let w = orig_weight + total_step;
+                        model.weights[current_feature] = w;
+                        let score = data.evaluate_mean(&model, evaluator);
+
+                        if current_best.replace_if_better(score, model.clone()) {
+                            if !quiet {
+                                println!(
+                                    "{:>9}|{:>9.3}|{:>9.3}",
+                                    current_feature, w, score
+                                );
+                            }
+                        }
+
+                        step *= params.step_scale;
+                        total_step += step;
+                    }
+
+                    // If found measurably better, skip other directions:
+                    if (current_best.score - start_score) > tolerance {
+                        break;
+                    }
+                } // dir
+
+                (current_best.score - start_score)
+            })
+            .filter(|improvement| improvement > &tolerance)
+            .count(); // current_feature
+
+        // If no feature mutation leads to measurable improvement, we're done.
+        if successes == 0 {
+            break;
+        }
+
+        if !quiet {
+            println!("---------------------------");
+        }
+    } // optimize-loop
+
+    current_best
+}
+
 impl CoordinateAscentParams {
     pub fn learn(&self, data: &RankingDataset, evaluator: &Evaluator) -> Box<Model> {
-        let evaluator_name = evaluator.name();
         let mut rand = Xoshiro256StarStar::seed_from_u64(self.seed);
         let tolerance = NotNan::new(self.tolerance).expect("Tolerance param should not be NaN.");
         let mut history: Vec<Scored<DenseLinearRankingModel>> = Vec::new();
@@ -131,101 +224,22 @@ impl CoordinateAscentParams {
             println!("---------------------------");
         }
 
-        for restart in 0..self.num_restarts {
+        let states: Vec<_> = (0..self.num_restarts).map(|restart_id| 
+            (restart_id, Xoshiro256StarStar::seed_from_u64(rand.next_u64()))
+        ).collect();
+
+        let mut history: Vec<Scored<DenseLinearRankingModel>> = Vec::new();
+        history.par_extend(states.into_par_iter().map(|(restart_id, rand)| {
             if !self.quiet {
                 println!(
                     "[+] Random restart #{}/{}...",
-                    restart + 1,
+                    restart_id + 1,
                     self.num_restarts
                 );
             }
+            optimize_inner(restart_id, data, evaluator, rand, self)
+        }));
 
-            // Initialize to even weights:
-            let mut model = DenseLinearRankingModel::new(data.n_dim);
-            model.reset(self.init_random, &mut rand);
-
-            // Initialize this local best (within current restart cycle):
-            let start_score = data.evaluate_mean(&model, evaluator);
-            let mut current_best = Scored::new(start_score, model.clone());
-
-            loop {
-                // Get new order of features for this optimization pass.
-                let mut fids: Vec<u32> = data.features.clone();
-                fids.shuffle(&mut rand);
-
-                if !self.quiet {
-                    println!("Shuffle features and optimize!");
-                    println!("---------------------------");
-                    println!("{:>9}|{:>9}|{:>9}", "Feature", "Weight", evaluator_name);
-                    println!("---------------------------");
-                }
-
-                let successes = fids
-                    .iter()
-                    .map(|current_feature| {
-                        let start_score = current_best.score;
-                        model = current_best.item.clone();
-                        if self.normalize {
-                            model.l1_normalize();
-                        }
-
-                        let current_feature = *current_feature as usize;
-                        let orig_weight = model.weights[current_feature];
-                        let mut total_step;
-
-                        for dir in SIGN {
-                            let mut step = self.step_base * f64::from(*dir);
-                            if orig_weight != 0.0 && step.abs() > 0.5 * f64::abs(orig_weight) {
-                                step = self.step_base * orig_weight.abs() * f64::from(*dir)
-                            }
-                            total_step = step;
-                            let mut num_iter = self.num_max_iterations;
-                            if *dir == 0 {
-                                num_iter = 1;
-                                total_step = -orig_weight;
-                            }
-
-                            for _ in 0..num_iter {
-                                let w = orig_weight + total_step;
-                                model.weights[current_feature] = w;
-                                let score = data.evaluate_mean(&model, evaluator);
-
-                                if current_best.replace_if_better(score, model.clone()) {
-                                    if !self.quiet {
-                                        println!(
-                                            "{:>9}|{:>9.3}|{:>9.3}",
-                                            current_feature, w, score
-                                        );
-                                    }
-                                }
-
-                                step *= self.step_scale;
-                                total_step += step;
-                            }
-
-                            // If found measurably better, skip other directions:
-                            if (current_best.score - start_score) > tolerance {
-                                break;
-                            }
-                        } // dir
-
-                        (current_best.score - start_score)
-                    })
-                    .filter(|improvement| improvement > &tolerance)
-                    .count(); // current_feature
-
-                // If no feature mutation leads to measurable improvement, we're done.
-                if successes == 0 {
-                    break;
-                }
-
-                if !self.quiet {
-                    println!("---------------------------");
-                }
-            } // optimize-loop
-
-            history.push(current_best.clone());
-        } // restarts-loop
         if !self.quiet {
             println!("---------------------------");
             println!("Finished successfully.");
