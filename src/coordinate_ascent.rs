@@ -1,10 +1,12 @@
 use crate::dataset::*;
 use crate::evaluators::Evaluator;
+use crate::WeightedEnsemble;
 use crate::{Model, Scored};
 use ordered_float::NotNan;
 use rand::prelude::*;
 use rand_xoshiro::rand_core::SeedableRng;
 use rand_xoshiro::Xoshiro256StarStar;
+use std::sync::Arc;
 
 #[derive(Clone, Debug)]
 pub struct CoordinateAscentParams {
@@ -17,6 +19,7 @@ pub struct CoordinateAscentParams {
     pub normalize: bool,
     pub quiet: bool,
     pub init_random: bool,
+    pub output_ensemble: bool,
 }
 
 impl Default for CoordinateAscentParams {
@@ -31,6 +34,7 @@ impl Default for CoordinateAscentParams {
             normalize: false,
             quiet: false,
             init_random: false,
+            output_ensemble: false,
         }
     }
 }
@@ -49,7 +53,7 @@ impl DenseLinearRankingModel {
     fn reset<R: Rng>(&mut self, init_random: bool, rand: &mut R) {
         if init_random {
             for i in 0..self.weights.len() {
-               self.weights[i] =  rand.gen_range(-1.0, 1.0);
+                self.weights[i] = rand.gen_range(-1.0, 1.0);
             }
         } else {
             self.reset_uniform();
@@ -107,20 +111,19 @@ impl DenseLinearRankingModel {
 }
 
 impl Model for DenseLinearRankingModel {
-    fn score(&self, features: &Features) -> f64 {
-        self.predict(features)
+    fn score(&self, features: &Features) -> NotNan<f64> {
+        NotNan::new(self.predict(features)).expect("Model.predict -> NaN")
     }
 }
 
-const SIGN: &[i32] = &[1, -1, 0];
+const SIGN: &[i32] = &[0, -1, 1];
 
 impl CoordinateAscentParams {
     pub fn learn(&self, data: &RankingDataset, evaluator: &Evaluator) -> Box<Model> {
         let evaluator_name = evaluator.name();
         let mut rand = Xoshiro256StarStar::seed_from_u64(self.seed);
         let tolerance = NotNan::new(self.tolerance).expect("Tolerance param should not be NaN.");
-        let mut model = DenseLinearRankingModel::new(data.n_dim);
-        let mut best_model = Scored::new(0.0, model.clone());
+        let mut history: Vec<Scored<DenseLinearRankingModel>> = Vec::new();
 
         if !self.quiet {
             println!("---------------------------");
@@ -136,9 +139,9 @@ impl CoordinateAscentParams {
                     self.num_restarts
                 );
             }
-            let mut consecutive_failures = 0;
 
             // Initialize to even weights:
+            let mut model = DenseLinearRankingModel::new(data.n_dim);
             model.reset(self.init_random, &mut rand);
 
             // Initialize this local best (within current restart cycle):
@@ -150,99 +153,104 @@ impl CoordinateAscentParams {
                 let mut fids: Vec<u32> = data.features.clone();
                 fids.shuffle(&mut rand);
 
-                //There must be at least one feature increasing whose weight helps
-                if fids.len() == 1 {
-                    if consecutive_failures > 0 {
-                        break;
-                    }
-                } else {
-                    // Go until there is no more to try.
-                    if consecutive_failures >= fids.len() - 1 {
-                        break;
-                    }
-                }
-
                 if !self.quiet {
                     println!("Shuffle features and optimize!");
                     println!("---------------------------");
                     println!("{:>9}|{:>9}|{:>9}", "Feature", "Weight", evaluator_name);
                     println!("---------------------------");
                 }
-                for current_feature in fids {
-                    let current_feature = current_feature as usize;
-                    let orig_weight = model.weights[current_feature];
-                    let mut total_step;
-                    let mut best_weight = orig_weight;
-                    let mut success = false;
 
-                    for dir in SIGN {
-                        let mut step = self.step_base * f64::from(*dir);
-                        if orig_weight != 0.0 && f64::abs(step) > 0.5 * f64::abs(orig_weight) {
-                            step = self.step_base * f64::abs(orig_weight)
-                        }
-                        total_step = step;
-                        let mut num_iter = self.num_max_iterations;
-                        if *dir == 0 {
-                            num_iter = 1;
-                            total_step = -orig_weight;
+                let successes = fids
+                    .iter()
+                    .map(|current_feature| {
+                        let start_score = current_best.score;
+                        model = current_best.item.clone();
+                        if self.normalize {
+                            model.l1_normalize();
                         }
 
-                        for feature_trial in 0..num_iter {
-                            let w = orig_weight + total_step;
-                            model.weights[current_feature] = w;
-                            let score = data.evaluate_mean(&model, evaluator);
+                        let current_feature = *current_feature as usize;
+                        let orig_weight = model.weights[current_feature];
+                        let mut total_step;
 
-                            if current_best.replace_if_better(score, model.clone()) {
-                                success = true;
-                                best_weight = w;
-                                if !self.quiet {
-                                    println!("{:>9}|{:>9.3}|{:>9.3}", current_feature, w, score);
-                                }
+                        for dir in SIGN {
+                            let mut step = self.step_base * f64::from(*dir);
+                            if orig_weight != 0.0 && step.abs() > 0.5 * f64::abs(orig_weight) {
+                                step = self.step_base * orig_weight.abs() * f64::from(*dir)
                             }
-                            if feature_trial < num_iter - 1 {
+                            total_step = step;
+                            let mut num_iter = self.num_max_iterations;
+                            if *dir == 0 {
+                                num_iter = 1;
+                                total_step = -orig_weight;
+                            }
+
+                            for _ in 0..num_iter {
+                                let w = orig_weight + total_step;
+                                model.weights[current_feature] = w;
+                                let score = data.evaluate_mean(&model, evaluator);
+
+                                if current_best.replace_if_better(score, model.clone()) {
+                                    if !self.quiet {
+                                        println!(
+                                            "{:>9}|{:>9.3}|{:>9.3}",
+                                            current_feature, w, score
+                                        );
+                                    }
+                                }
+
                                 step *= self.step_scale;
                                 total_step += step;
                             }
-                        }
 
-                        // If found better, don't reset weights.
-                        // Also: skip other direction search.
-                        if success {
-                            break;
-                        } else {
-                            model.weights[current_feature] = orig_weight;
-                        }
-                    } // dir
+                            // If found measurably better, skip other directions:
+                            if (current_best.score - start_score) > tolerance {
+                                break;
+                            }
+                        } // dir
 
-                    // Since we've found a better weight value.
-                    model.weights[current_feature] = best_weight;
-                    if self.normalize {
-                        model.l1_normalize();
-                    }
+                        (current_best.score - start_score)
+                    })
+                    .filter(|improvement| improvement > &tolerance)
+                    .count(); // current_feature
 
-                    if success {
-                        consecutive_failures = 0;
-                    } else {
-                        consecutive_failures += 1;
-                    }
-                } // current_feature
+                // If no feature mutation leads to measurable improvement, we're done.
+                if successes == 0 {
+                    break;
+                }
 
                 if !self.quiet {
                     println!("---------------------------");
                 }
-
-                if current_best.score - start_score < tolerance {
-                    break;
-                }
-
-                best_model.use_best(&current_best);
             } // optimize-loop
-        }
+
+            history.push(current_best.clone());
+        } // restarts-loop
         if !self.quiet {
             println!("---------------------------");
             println!("Finished successfully.");
         }
 
-        Box::new(best_model.item)
+        if self.output_ensemble && history.len() > 1 {
+            let members: Vec<Scored<Arc<dyn Model>>> = history
+                .iter()
+                .map(|sm| {
+                    let mut model = sm.item.clone();
+                    model.l1_normalize();
+                    let m: Arc<dyn Model> = Arc::new(model);
+                    Scored::new(sm.score.into_inner(), m)
+                })
+                .collect();
+            Box::new(WeightedEnsemble(members))
+        } else {
+            Box::new(
+                history
+                    .iter()
+                    .max()
+                    .expect("Should be at least 1 restart!")
+                    .item
+                    .clone(),
+            )
+        }
     } // learn
 } // impl

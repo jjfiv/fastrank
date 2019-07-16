@@ -33,6 +33,7 @@ fn main() -> Result<(), Box<Error>> {
         )
         .arg(Arg::with_name("normalize_weights").long("normalize_weights"))
         .arg(Arg::with_name("init_random").long("init_random"))
+        .arg(Arg::with_name("output_ensemble").long("output_ensemble"))
         .arg(
             Arg::with_name("training_measure")
                 .long("metric2t")
@@ -42,6 +43,7 @@ fn main() -> Result<(), Box<Error>> {
         .get_matches();
 
     let mut params = CoordinateAscentParams::default();
+    params.init_random = matches.is_present("init_random");
     params.quiet = matches.is_present("quiet");
     if let Some(seed) = matches.value_of("seed") {
         params.seed = seed.parse::<u64>()?;
@@ -51,6 +53,7 @@ fn main() -> Result<(), Box<Error>> {
     if let Some(restarts) = matches.value_of("restarts") {
         params.num_restarts = restarts.parse::<u32>()?;
     }
+    params.output_ensemble = matches.is_present("output_ensemble");
     if let Some(iterations) = matches.value_of("iterations") {
         params.num_max_iterations = iterations.parse::<u32>()?;
     }
