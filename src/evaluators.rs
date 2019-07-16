@@ -137,14 +137,14 @@ impl Evaluator for NDCG {
         }
     }
     fn score(&self, qid: &str, ranked_list: &[RankedInstance]) -> f64 {
-        let actual_gain_vector: Vec<_> = ranked_list
-            .iter()
-            .map(|ri| ri.gain)
-            .filter(|g| g.into_inner() > 0.0)
-            .collect();
+        let actual_gain_vector: Vec<_> = ranked_list.iter().map(|ri| ri.gain).collect();
 
         let normalizer = self.ideal_gains.get(qid).cloned().unwrap_or_else(|| {
-            let mut gain_vector: Vec<_> = actual_gain_vector.clone();
+            let mut gain_vector: Vec<_> = actual_gain_vector
+                .iter()
+                .filter(|g| g.into_inner() > 0.0)
+                .cloned()
+                .collect();
             gain_vector.sort_unstable_by(|lhs, rhs| rhs.cmp(lhs));
             if gain_vector.is_empty() {
                 None
@@ -153,10 +153,16 @@ impl Evaluator for NDCG {
             }
         });
 
-        if let Some(ideal_ndcg) = normalizer {
+        if let Some(ideal_dcg) = normalizer {
             // Compute NDCG:
             let actual_dcg = compute_dcg(&actual_gain_vector, self.depth);
-            actual_dcg / ideal_ndcg
+            if actual_dcg > ideal_dcg {
+                panic!(
+                    "qid: {}, actual_gain_vector: {:?} ideal_dcg: {}",
+                    qid, actual_gain_vector, ideal_dcg
+                )
+            }
+            actual_dcg / ideal_dcg
         } else {
             // If not gains, there's nothing to calculate.
             0.0

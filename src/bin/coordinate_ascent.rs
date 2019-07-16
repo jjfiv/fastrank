@@ -31,6 +31,8 @@ fn main() -> Result<(), Box<Error>> {
                 .short("t")
                 .takes_value(true),
         )
+        .arg(Arg::with_name("normalize_weights").long("normalize_weights"))
+        .arg(Arg::with_name("init_random").long("init_random"))
         .arg(
             Arg::with_name("training_measure")
                 .long("metric2t")
@@ -55,6 +57,7 @@ fn main() -> Result<(), Box<Error>> {
     if let Some(tolerance) = matches.value_of("tolerance") {
         params.tolerance = tolerance.parse::<f64>()?;
     }
+    params.normalize = matches.is_present("normalize_weights");
     let judgments = match matches.value_of("qrel") {
         None => None,
         Some(path) => Some(qrel::read_file(path)?),

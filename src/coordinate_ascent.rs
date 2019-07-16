@@ -16,6 +16,7 @@ pub struct CoordinateAscentParams {
     pub seed: u64,
     pub normalize: bool,
     pub quiet: bool,
+    pub init_random: bool,
 }
 
 impl Default for CoordinateAscentParams {
@@ -29,6 +30,7 @@ impl Default for CoordinateAscentParams {
             seed: thread_rng().next_u64(),
             normalize: false,
             quiet: false,
+            init_random: false,
         }
     }
 }
@@ -41,6 +43,16 @@ impl DenseLinearRankingModel {
     fn new(n_dim: u32) -> Self {
         Self {
             weights: vec![0.0; n_dim as usize],
+        }
+    }
+
+    fn reset<R: Rng>(&mut self, init_random: bool, rand: &mut R) {
+        if init_random {
+            for i in 0..self.weights.len() {
+               self.weights[i] =  rand.gen_range(-1.0, 1.0);
+            }
+        } else {
+            self.reset_uniform();
         }
     }
 
@@ -110,22 +122,13 @@ impl CoordinateAscentParams {
         let mut model = DenseLinearRankingModel::new(data.n_dim);
         let mut best_model = Scored::new(0.0, model.clone());
 
-        // The stochasticity in this algorithm comes from the order in which features are visited.
-        let optimization_orders: Vec<Vec<u32>> = (0..self.num_restarts)
-            .map(|_| {
-                let mut fids: Vec<u32> = data.features.clone();
-                fids.shuffle(&mut rand);
-                fids
-            })
-            .collect();
-
         if !self.quiet {
             println!("---------------------------");
             println!("Training starts...");
             println!("---------------------------");
         }
 
-        for (restart, fids) in optimization_orders.iter().enumerate() {
+        for restart in 0..self.num_restarts {
             if !self.quiet {
                 println!(
                     "[+] Random restart #{}/{}...",
@@ -136,13 +139,17 @@ impl CoordinateAscentParams {
             let mut consecutive_failures = 0;
 
             // Initialize to even weights:
-            model.reset_uniform();
+            model.reset(self.init_random, &mut rand);
 
             // Initialize this local best (within current restart cycle):
             let start_score = data.evaluate_mean(&model, evaluator);
             let mut current_best = Scored::new(start_score, model.clone());
 
             loop {
+                // Get new order of features for this optimization pass.
+                let mut fids: Vec<u32> = data.features.clone();
+                fids.shuffle(&mut rand);
+
                 //There must be at least one feature increasing whose weight helps
                 if fids.len() == 1 {
                     if consecutive_failures > 0 {
@@ -161,9 +168,8 @@ impl CoordinateAscentParams {
                     println!("{:>9}|{:>9}|{:>9}", "Feature", "Weight", evaluator_name);
                     println!("---------------------------");
                 }
-
                 for current_feature in fids {
-                    let current_feature = *current_feature as usize;
+                    let current_feature = current_feature as usize;
                     let orig_weight = model.weights[current_feature];
                     let mut total_step;
                     let mut best_weight = orig_weight;
