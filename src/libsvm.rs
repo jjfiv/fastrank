@@ -11,6 +11,7 @@
 //!
 //!
 //!
+use ordered_float::{NotNan,FloatIsNan};
 use std::fmt;
 use std::io;
 use std::num;
@@ -24,6 +25,8 @@ pub enum ParseError {
     IO(io::Error),
     /// Something is wrong with the label; it couldn't be parsed as a float.
     Label(num::ParseFloatError),
+    /// Why would you have NaN labels?
+    LabelIsNan(FloatIsNan),
     /// A token was found without a colon; therefore it can't be a valid fnum:fvalue pair.
     FeatureNoColon(),
     /// A feature was defined multiple times (same index) and we don't know what to do.
@@ -63,7 +66,7 @@ impl std::error::Error for FileParseError {
     }
 }
 
-/// Represents a sparse feature: numeric id and floating point value.
+/// Represents a sparse feature: numerNoic id and floating point value.
 #[derive(Debug, Clone)]
 pub struct Feature {
     /// The number identifying this feature.
@@ -102,7 +105,7 @@ impl Feature {
 #[derive(Debug)]
 pub struct Instance {
     /// This is a float value to support regression inputs.
-    pub label: f32,
+    pub label: NotNan<f32>,
     /// This is the query identifier provided with the instance.
     pub query: Option<String>,
     /// This is the sparse feature representation. These *are* expected to be sorted and unique.
@@ -116,7 +119,7 @@ impl Instance {
     /// Constructor. Creates an empty instance with no comment and a negative label.
     pub fn new() -> Instance {
         Instance {
-            label: 0.0,
+            label: NotNan::new(0.0).unwrap(),
             query: None,
             features: Vec::new(),
             comment: None,
@@ -138,11 +141,12 @@ impl Instance {
         let mut tokens = data.split_whitespace().peekable();
 
         // Parse label if we can:
-        inst.label = tokens
+        inst.label = NotNan::new(tokens
             .next()
             .unwrap()
             .parse::<f64>()
-            .map_err(ParseError::Label)? as f32;
+            .map_err(ParseError::Label)? as f32)
+            .map_err(ParseError::LabelIsNan)?;
 
         // Parse qid if we can:
         if let Some(t) = tokens.peek().cloned() {

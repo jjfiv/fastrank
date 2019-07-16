@@ -98,13 +98,13 @@ impl Model for DenseLinearRankingModel {
     }
 }
 
+const sign: &[i32] = &[1, -1, 0];
+
 impl CoordinateAscentParams {
     pub fn learn(&self, data: &RankingDataset, evaluator: &Evaluator) -> Box<Model> {
         let evaluator_name = evaluator.name();
         let mut rand = Xoshiro256StarStar::seed_from_u64(self.seed);
         let tolerance = NotNan::new(self.tolerance).expect("Tolerance param should not be NaN.");
-
-        let sign = &[1, -1, 0];
         
         let mut model = DenseLinearRankingModel::new(data.n_dim);
         let mut best_model = Scored::new(0.0, model.clone());
@@ -136,9 +136,10 @@ impl CoordinateAscentParams {
 
             // Initialize to even weights:
             model.reset_uniform();
+            println!("{:?}", model.weights);
 
             // Initialize this local best (within current restart cycle):
-            let start_score = evaluator.score(&model, &data);
+            let start_score = data.evaluate_mean(&model, evaluator);
             let mut current_best = Scored::new(start_score, model.clone());
 
             loop {
@@ -183,7 +184,7 @@ impl CoordinateAscentParams {
                         for feature_trial in 0..num_iter {
                             let w = orig_weight + total_step;
                             model.weights[current_feature] = w;
-                            let score = evaluator.score(&model, &data);
+                            let score = data.evaluate_mean(&model, evaluator);
 
                             if current_best.replace_if_better(score, model.clone()) {
                                 success = true;

@@ -64,13 +64,13 @@ fn main() -> Result<(), Box<Error>> {
     // TODO: support at rank syntax: rr@10
     let evaluator: Box<Evaluator> = match measure.as_str() {
         // TODO: support loading qrel file norms
-        "ap" | "map" => Box::new(MeanAveragePrecision::new(&dataset, None)),
+        "ap" | "map" => Box::new(AveragePrecision::new(&dataset, None)),
         "rr" | "mrr" => Box::new(ReciprocalRank),
         _ => panic!("Invalid training measure: \"{}\"", measure)
     };
     let model = params.learn(&dataset, evaluator.as_ref());
     println!("Training Performance:");
-    println!("    mAP: {:.3}", MeanAveragePrecision::new(&dataset, None).score(model.as_ref(), &dataset));
-    println!("    mRR: {:.3}", ReciprocalRank.score(model.as_ref(), &dataset));
+    println!("    mAP: {:.3}", dataset.evaluate_mean(model.as_ref(), &AveragePrecision::new(&dataset, None)));
+    println!("    mRR: {:.3}", dataset.evaluate_mean(model.as_ref(), &ReciprocalRank));
     Ok(())
 }

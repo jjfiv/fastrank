@@ -1,6 +1,10 @@
 use std::collections::HashMap;
 use std::collections::HashSet;
+use ordered_float::NotNan;
+use std::f64;
 use crate::libsvm;
+use crate::Model;
+use crate::evaluators::{RankedInstance, Evaluator};
 
 pub enum Features {
     Dense32(Vec<f32>),
@@ -51,7 +55,7 @@ impl Features {
 }
 
 pub struct TrainingInstance {
-    pub gain: f32,
+    pub gain: NotNan<f32>,
     pub qid: String,
     pub features: Features,
 }
@@ -71,7 +75,7 @@ impl TrainingInstance {
         })
     }
     pub fn is_relevant(&self) -> bool {
-        self.gain > 0.0
+        self.gain.into_inner() > 0.0
     }
 }
 
@@ -83,6 +87,23 @@ pub struct RankingDataset {
 }
 
 impl RankingDataset {
+    pub fn evaluate_mean(&self, model: &Model, evaluator: &Evaluator) -> f64 {
+        let worst_prediction = NotNan::new(f64::MIN).unwrap();
+        let mut sum_score = 0.0;
+        let mut num_scores = self.data_by_query.len() as f64;
+        for (qid, docs) in self.data_by_query.iter() {
+            // Predict for every document:
+            let mut ranked_list: Vec<_> = docs.iter().cloned().map(|index| {
+                let prediction = NotNan::new(model.score(&self.instances[index].features));
+                RankedInstance::new(prediction.unwrap_or(worst_prediction), self.instances[index].gain, index as u32)
+            }).collect();
+            // Sort largest to smallest:
+            ranked_list.sort_unstable_by(|lhs, rhs| rhs.cmp(lhs));
+            sum_score += evaluator.score(&qid, &ranked_list);
+        }
+        sum_score / num_scores
+    }
+
     pub fn import(data: Vec<libsvm::Instance>) -> Result<Self, &'static str> {
         let instances: Result<Vec<_>, _> = data
             .into_iter()

@@ -1,11 +1,26 @@
 use std::collections::HashMap;
+use ordered_float::NotNan;
 use crate::dataset::*;
-use crate::Model;
-use crate::Scored;
+
+#[derive(PartialEq, PartialOrd, Eq, Ord)]
+pub struct RankedInstance {
+    pub score: NotNan<f64>,
+    pub gain: NotNan<f32>,
+    pub identifier: u32,
+}
+
+impl RankedInstance {
+    pub fn new(score: NotNan<f64>, gain: NotNan<f32>, identifier: u32) -> Self {
+        Self { score, gain, identifier }
+    }
+    pub fn is_relevant(&self) -> bool {
+        self.gain.into_inner() > 0.0
+    }
+}
 
 pub trait Evaluator {
     fn name(&self) -> String;
-    fn score(&self, model: &Model, dataset: &RankingDataset) -> f64;
+    fn score(&self, qid: &str, ranked_list: &[RankedInstance]) -> f64;
 }
 
 pub struct ReciprocalRank;
@@ -14,47 +29,29 @@ impl Evaluator for ReciprocalRank {
     fn name(&self) -> String {
         String::from("RR")
     }
-    fn score(&self, model: &Model, dataset: &RankingDataset) -> f64 {
-        let mut rr_sum = 0.0;
-        let num_queries = dataset.data_by_query.len() as f64;
-
-        for (qid, instance_ids) in dataset.data_by_query.iter() {
-            // Rank data.
-            let mut ranked_list: Vec<Scored<usize>> = instance_ids
-                .iter()
-                .cloned()
-                .map(|index| Scored::new(model.score(&dataset.instances[index].features), index))
-                .collect();
-            ranked_list.sort_unstable_by(|lhs, rhs| rhs.cmp(lhs));
-            
-            // Compute RR:
-            let mut recip_rank = 0.0;
-            if let Some(rel_rank) = ranked_list
-                .iter()
-                .map(|scored| dataset.instances[scored.item].is_relevant())
-                .enumerate()
-                .filter(|(_, rel)| *rel)
-                .nth(0)
-                .map(|(i, _)| i + 1) {
-                recip_rank = 1.0 / (rel_rank as f64)
-            }
-
-            rr_sum += recip_rank;
+    fn score(&self, qid: &str, ranked_list: &[RankedInstance]) -> f64 {
+        // Compute RR:
+        let mut recip_rank = 0.0;
+        if let Some(rel_rank) = ranked_list
+            .iter()
+            .map(|ri| ri.is_relevant())
+            .enumerate()
+            .filter(|(_, rel)| *rel)
+            .nth(0)
+            .map(|(i, _)| i + 1) {
+            recip_rank = 1.0 / (rel_rank as f64)
         }
-
-        // Compute Mean RR:
-        rr_sum / num_queries
+        return recip_rank;
     }
 }
 
 
-pub struct MeanAveragePrecision {
+pub struct AveragePrecision {
     /// Norms are the number of relevant by query for mAP.
-    query_norms: HashMap<String, f64>,
-    num_queries: f64,
+    query_norms: HashMap<String, usize>,
 }
 
-impl MeanAveragePrecision {
+impl AveragePrecision {
     pub fn new(dataset: &RankingDataset, total_relevant_by_qid: Option<&HashMap<String, u32>>) -> Self {
         let num_queries = dataset.data_by_query.len() as f64;
         let mut query_norms = HashMap::new();
@@ -73,52 +70,40 @@ impl MeanAveragePrecision {
             });
 
             if num_relevant > 0 {
-                query_norms.insert(qid.clone(), num_relevant as f64);
+                query_norms.insert(qid.clone(), num_relevant);
             }
         }
 
-        Self { query_norms, num_queries }
+        Self { query_norms }
     }
 }
 
-impl Evaluator for MeanAveragePrecision {
+impl Evaluator for AveragePrecision {
     fn name(&self) -> String {
-        String::from("mAP")
+        String::from("AP")
     }
-    fn score(&self, model: &Model, dataset: &RankingDataset) -> f64 {
-        let mut ap_sum = 0.0;
+    fn score(&self, qid: &str, ranked_list: &[RankedInstance]) -> f64 {
+        let num_relevant = self.query_norms.get(qid).cloned().unwrap_or_else(|| 
+            ranked_list.iter().filter(|ri| ri.is_relevant()).count()
+        ); 
 
-        for (qid, instance_ids) in dataset.data_by_query.iter() {
-            let num_relevant = match self.query_norms.get(qid) {
-                None => continue,
-                Some(norm) => norm
-            };
-
-            // Rank data.
-            let mut ranked_list: Vec<Scored<usize>> = instance_ids
-                .iter()
-                .cloned()
-                .map(|index| Scored::new(model.score(&dataset.instances[index].features), index))
-                .collect();
-            ranked_list.sort_unstable_by(|lhs, rhs| rhs.cmp(lhs));
-            
-            // Compute AP:
-            let mut recall_points = 0;
-            let mut sum_precision = 0.0;
-            for rank in ranked_list
-                .iter()
-                .map(|scored| dataset.instances[scored.item].is_relevant())
-                .enumerate()
-                .filter(|(_, rel)| *rel)
-                .map(|(i, _)| i + 1)
-            {
-                recall_points += 1;
-                sum_precision += f64::from(recall_points) / (rank as f64);
-            }
-            ap_sum += sum_precision / num_relevant;
+        if num_relevant == 0 {
+            return 0.0;
         }
 
-        // Compute Mean AP:
-        ap_sum / self.num_queries
+        // Compute AP:
+        let mut recall_points = 0;
+        let mut sum_precision = 0.0;
+        for rank in ranked_list
+            .iter()
+            .map(|ri| ri.is_relevant())
+            .enumerate()
+            .filter(|(_, rel)| *rel)
+            .map(|(i, _)| i + 1)
+        {
+            recall_points += 1;
+            sum_precision += f64::from(recall_points) / (rank as f64);
+        }
+        sum_precision / (num_relevant as f64)
     }
 }
