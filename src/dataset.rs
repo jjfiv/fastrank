@@ -64,16 +64,29 @@ pub struct TrainingInstance {
 
 impl TrainingInstance {
     pub fn try_new(libsvm: libsvm::Instance) -> Result<TrainingInstance, &'static str> {
-        Ok(TrainingInstance {
-            gain: libsvm.label,
-            qid: libsvm.query.ok_or("Missing qid")?,
-            features: Features::Sparse32(
+        // Convert features to dense representation if it's worthwhile.
+        let max_feature = libsvm.features.iter().map(|f| f.idx).max().unwrap_or(1);
+        let density = (libsvm.features.len() as f64) / (max_feature as f64);
+        let features = if density >= 0.5 {
+            let mut dense = vec![0_f32; (max_feature + 1) as usize];
+            for f in libsvm.features.iter() {
+                dense[f.idx as usize] = f.value;
+            }
+            Features::Dense32(dense)
+        } else {
+            Features::Sparse32(
                 libsvm
                     .features
                     .into_iter()
                     .map(|f| (f.idx, f.value))
                     .collect(),
-            ),
+            )
+        };
+
+        Ok(TrainingInstance {
+            gain: libsvm.label,
+            qid: libsvm.query.ok_or("Missing qid")?,
+            features,
         })
     }
     pub fn is_relevant(&self) -> bool {
