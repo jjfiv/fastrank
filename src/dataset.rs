@@ -90,7 +90,7 @@ impl RankingDataset {
     pub fn evaluate_mean(&self, model: &Model, evaluator: &Evaluator) -> f64 {
         let worst_prediction = NotNan::new(f64::MIN).unwrap();
         let mut sum_score = 0.0;
-        let mut num_scores = self.data_by_query.len() as f64;
+        let num_scores = self.data_by_query.len() as f64;
         for (qid, docs) in self.data_by_query.iter() {
             // Predict for every document:
             let mut ranked_list: Vec<_> = docs.iter().cloned().map(|index| {

@@ -61,6 +61,10 @@ impl Evaluator for ReciprocalRank {
     }
 }
 
+pub struct NDCG {
+    ideal_gains: HashMap<String, f32>,
+}
+
 
 pub struct AveragePrecision {
     /// Norms are the number of relevant by query for mAP.
@@ -69,7 +73,6 @@ pub struct AveragePrecision {
 
 impl AveragePrecision {
     pub fn new(dataset: &RankingDataset, total_relevant_by_qid: Option<&HashMap<String, u32>>) -> Self {
-        let num_queries = dataset.data_by_query.len() as f64;
         let mut query_norms = HashMap::new();
 
         for (qid, instance_ids) in dataset.data_by_query.iter() {

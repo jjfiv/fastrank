@@ -6,8 +6,8 @@ pub mod coordinate_ascent;
 pub mod libsvm;
 pub mod dataset;
 pub mod evaluators;
-
 pub mod io_helper;
+pub mod qrel;
 
 pub trait Model : std::fmt::Debug {
     fn score(&self, features: &dataset::Features) -> f64;
