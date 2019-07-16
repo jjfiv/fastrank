@@ -1,8 +1,10 @@
 use crate::dataset::*;
 use crate::qrel::QuerySetJudgments;
 use ordered_float::NotNan;
+use std::cmp::min;
 use std::cmp::Ordering;
 use std::collections::HashMap;
+use std::sync::Arc;
 
 #[derive(PartialEq, PartialOrd, Eq)]
 pub struct RankedInstance {
@@ -44,6 +46,7 @@ pub trait Evaluator {
     fn score(&self, qid: &str, ranked_list: &[RankedInstance]) -> f64;
 }
 
+#[derive(Clone)]
 pub struct ReciprocalRank;
 
 impl Evaluator for ReciprocalRank {
@@ -67,23 +70,25 @@ impl Evaluator for ReciprocalRank {
     }
 }
 
-fn compute_dcg(gains: &[NotNan<f32>], depth: usize) -> f64 {
+fn compute_dcg(gains: &[NotNan<f32>], depth: Option<usize>) -> f64 {
     let mut dcg = 0.0;
-    for (i, gain) in gains.iter().enumerate().take(depth) {
-        let gain = gain.into_inner() as f64;
+    let depth = depth.unwrap_or(gains.len());
+    for i in 0..min(depth, gains.len()) {
+        let gain = gains[i].into_inner() as f64;
         let i = i as f64;
         dcg += ((2.0 as f64).powf(gain) - 1.0) / (i + 2.0).log2();
     }
     dcg
 }
 
+#[derive(Clone)]
 pub struct NDCG {
-    depth: usize,
-    ideal_gains: HashMap<String, Option<f64>>,
+    depth: Option<usize>,
+    ideal_gains: Arc<HashMap<String, Option<f64>>>,
 }
 impl NDCG {
     pub fn new(
-        depth: usize,
+        depth: Option<usize>,
         dataset: &RankingDataset,
         judgments: Option<QuerySetJudgments>,
     ) -> Self {
@@ -118,14 +123,18 @@ impl NDCG {
 
         Self {
             depth,
-            ideal_gains: query_norms,
+            ideal_gains: Arc::new(query_norms),
         }
     }
 }
 
 impl Evaluator for NDCG {
     fn name(&self) -> String {
-        String::from("NDCG")
+        if let Some(depth) = self.depth {
+            format!("NDCG@{}", depth)
+        } else {
+            String::from("NDCG")
+        }
     }
     fn score(&self, qid: &str, ranked_list: &[RankedInstance]) -> f64 {
         let actual_gain_vector: Vec<_> = ranked_list
@@ -155,9 +164,10 @@ impl Evaluator for NDCG {
     }
 }
 
+#[derive(Clone)]
 pub struct AveragePrecision {
     /// Norms are the number of relevant by query for mAP.
-    query_norms: HashMap<String, u32>,
+    query_norms: Arc<HashMap<String, u32>>,
 }
 
 impl AveragePrecision {
@@ -183,7 +193,9 @@ impl AveragePrecision {
             }
         }
 
-        Self { query_norms }
+        Self {
+            query_norms: Arc::new(query_norms),
+        }
     }
 }
 

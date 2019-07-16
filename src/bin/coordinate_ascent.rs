@@ -1,17 +1,15 @@
 use clap::{App, Arg};
 use fastrank::coordinate_ascent::*;
-use fastrank::io_helper;
-use fastrank::libsvm;
-use std::error::Error;
 use fastrank::dataset::RankingDataset;
-use fastrank::evaluators::*;
 use fastrank::qrel;
+use std::error::Error;
 
 fn main() -> Result<(), Box<Error>> {
     let matches = App::new("coordinate_ascent_learn")
         .version("0.1")
         .about("Learn a linear ranking model.")
         .arg(Arg::with_name("TRAIN_FILE").required(true))
+        .arg(Arg::with_name("TEST_FILE").long("test").takes_value(true))
         .arg(Arg::with_name("seed").long("seed").takes_value(true))
         // Optional loading of query relevance files.
         .arg(Arg::with_name("qrel").long("qrel").takes_value(true))
@@ -33,7 +31,11 @@ fn main() -> Result<(), Box<Error>> {
                 .short("t")
                 .takes_value(true),
         )
-        .arg(Arg::with_name("training_measure").long("train_with").long("metric2t").takes_value(true))
+        .arg(
+            Arg::with_name("training_measure")
+                .long("metric2t")
+                .takes_value(true),
+        )
         .arg(Arg::with_name("quiet").long("quiet").short("q"))
         .get_matches();
 
@@ -61,33 +63,39 @@ fn main() -> Result<(), Box<Error>> {
         .value_of("TRAIN_FILE")
         .ok_or("You need a training file to learn a model!")?;
 
-    let mut reader = io_helper::open_reader(input)?;
+    let train_dataset = RankingDataset::load_libsvm(input)?;
+    let test_dataset = matches
+        .value_of("TEST_FILE")
+        .map(|test_file| RankingDataset::load_libsvm(test_file))
+        .transpose()?;
 
-
-    let instances: Vec<libsvm::Instance> = libsvm::collect_reader(&mut reader)?;
-    let dataset = RankingDataset::import(instances)?;
-
-    let m_ap = AveragePrecision::new(&dataset, judgments.clone());
-    let m_rr = ReciprocalRank;
-    let ndcg1000 = NDCG::new(1000, &dataset, judgments.clone());
-    let ndcg10 = NDCG::new(10, &dataset, judgments.clone());
-
-    let measure = matches.value_of("training_measure").unwrap_or("map").to_lowercase();
-    // TODO: support at rank syntax: rr@10
-    let evaluator: &Evaluator = match measure.as_str() {
-        // TODO: support loading qrel file norms
-        "ap" | "map" => &m_ap,
-        "rr" | "mrr" => &m_rr,
-        "ndcg" | "ndcg@1000" => &ndcg1000,
-        "ndcg@10" => &ndcg10,
-        _ => panic!("Invalid training measure: \"{}\"", measure)
-    };
-    let model = params.learn(&dataset, evaluator);
+    let evaluator = train_dataset.make_evaluator(
+        matches.value_of("training_measure").unwrap_or("map"),
+        judgments.clone(),
+    )?;
+    let model = params.learn(&train_dataset, evaluator.as_ref());
     println!("MODEL {:?}", model);
     println!("Training Performance:");
-    println!("    mAP: {:.3}", dataset.evaluate_mean(model.as_ref(), &m_ap));
-    println!("    mRR: {:.3}", dataset.evaluate_mean(model.as_ref(), &m_rr));
-    println!("    ndcg: {:.3}", dataset.evaluate_mean(model.as_ref(), &ndcg1000));
-    println!("    ndcg@10: {:.3}", dataset.evaluate_mean(model.as_ref(), &ndcg10));
+    for measure in &["map", "rr", "ndcg@5", "ndcg"] {
+        let evaluator = train_dataset.make_evaluator(measure, judgments.clone())?;
+        println!(
+            "\t{}: {:.3}",
+            evaluator.name(),
+            train_dataset.evaluate_mean(model.as_ref(), evaluator.as_ref())
+        );
+    }
+
+    if let Some(test_dataset) = test_dataset {
+        println!("Test Performance:");
+        for measure in &["map", "rr", "ndcg@5", "ndcg"] {
+            let evaluator = test_dataset.make_evaluator(measure, judgments.clone())?;
+            println!(
+                "\t{}: {:.3}",
+                evaluator.name(),
+                test_dataset.evaluate_mean(model.as_ref(), evaluator.as_ref())
+            );
+        }
+    }
+
     Ok(())
 }

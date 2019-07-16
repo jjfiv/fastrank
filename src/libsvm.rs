@@ -11,7 +11,7 @@
 //!
 //!
 //!
-use ordered_float::{NotNan,FloatIsNan};
+use ordered_float::{FloatIsNan, NotNan};
 use std::fmt;
 use std::io;
 use std::num;
@@ -92,6 +92,7 @@ impl Feature {
                 })
             }
             None => {
+                println!("FeatureNoColon: {}", tok);
                 // TODO flag for boolean features?
                 Err(ParseError::FeatureNoColon())
             }
@@ -141,12 +142,14 @@ impl Instance {
         let mut tokens = data.split_whitespace().peekable();
 
         // Parse label if we can:
-        inst.label = NotNan::new(tokens
-            .next()
-            .unwrap()
-            .parse::<f64>()
-            .map_err(ParseError::Label)? as f32)
-            .map_err(ParseError::LabelIsNan)?;
+        inst.label = NotNan::new(
+            tokens
+                .next()
+                .unwrap()
+                .parse::<f64>()
+                .map_err(ParseError::Label)? as f32,
+        )
+        .map_err(ParseError::LabelIsNan)?;
 
         // Parse qid if we can:
         if let Some(t) = tokens.peek().cloned() {
@@ -204,89 +207,80 @@ impl Instance {
     }
 }
 
+/// This class implements an iterator over a file of libsvm/ranklib style instances.
+pub struct InstanceIter {
+    reader: Box<io::BufRead>,
+    line: String,
+    line_num: u64,
+}
+
+impl InstanceIter {
+    /// Construct a new iterator from a file.
+    fn new(reader: Box<io::BufRead>) -> Self {
+        Self {
+            reader,
+            line: String::new(),
+            line_num: 0,
+        }
+    }
+}
+
+impl Iterator for InstanceIter {
+    /// Each line may be an error or a valid instance.
+    type Item = Result<Instance, FileParseError>;
+
+    /// When iterators return None, they are done.
+    fn next(&mut self) -> Option<Self::Item> {
+        self.line_num += 1;
+        // Clear internal state:
+        self.line.clear();
+
+        // Can we successfully read the next line?
+        let amt_read = self
+            .reader
+            .read_line(&mut self.line)
+            .map_err(|io| FileParseError::LineIO(self.line_num, io));
+
+        match amt_read {
+            Ok(amt) => {
+                // All done?
+                if amt <= 0 {
+                    return None;
+                }
+            }
+            // Some kind of I/O error.
+            Err(e) => return Some(Err(e)),
+        }
+
+        // Parse instance if we can!
+        Some(
+            Instance::parse(&self.line)
+                .map_err(|e| FileParseError::LineParseError(self.line_num, e)),
+        )
+    }
+}
+
+/// Public interface to construct an iterator of instances.
+pub fn instances(reader: Box<io::BufRead>) -> InstanceIter {
+    InstanceIter::new(reader)
+}
+
 /// This method allows us to parse all lines of a LibSVM input file and perform an action (given as
 /// a closure) on the parsed instances. On any parse failure, it will short-circuit and return an
 /// error. In comparison to an iterator, this callback approach allows us to re-use a single buffer
 /// for our line-based file-IO.
-///
-/// This variant loans the instance to the owner as a reference, so you cannot use this method to
-/// collect items into a vector without cloning them. Instead, see collect_file.
-pub fn foreach<F>(reader: &mut io::BufRead, handler: &mut F) -> Result<(), FileParseError>
+pub fn foreach<F>(reader: Box<io::BufRead>, handler: &mut F) -> Result<(), FileParseError>
 where
     F: FnMut(Instance),
 {
-    let mut line = String::new();
-    let mut num = 0;
-
-    loop {
-        num += 1;
-        let amt_read = reader
-            .read_line(&mut line)
-            .map_err(|io| FileParseError::LineIO(num, io))?;
-        if amt_read <= 0 {
-            break;
-        };
-
-        // Parse instance if we can!
-        let inst =
-            Instance::parse(&line).map_err(|error| FileParseError::LineParseError(num, error))?;
-
-        line.clear();
-        handler(inst);
+    for inst in instances(reader) {
+        handler(inst?);
     }
     Ok(())
 }
 
-pub fn collect_reader(reader: &mut io::BufRead) -> Result<Vec<Instance>, FileParseError> {
-    let mut line = String::new();
-    let mut num = 0;
-    let mut output = Vec::new();
-
-    loop {
-        num += 1;
-        let amt_read = reader
-            .read_line(&mut line)
-            .map_err(|io| FileParseError::LineIO(num, io))?;
-        if amt_read <= 0 {
-            break;
-        };
-
-        // Parse instance if we can!
-        let inst =
-            Instance::parse(&line).map_err(|error| FileParseError::LineParseError(num, error))?;
-        // Add it to our vector.
-        output.push(inst);
-
-        line.clear();
-    }
-    Ok(output)
-}
-
-/// This calculates the dot product between two instances efficiently, given that their
-/// features are sorted already.
-pub fn dot_product(lhs: &Instance, rhs: &Instance) -> f32 {
-    let ref a = lhs.features;
-    let ref b = rhs.features;
-    let mut i = 0;
-    let mut j = 0;
-
-    let mut sum = 0.0;
-    while i < a.len() && j < b.len() {
-        if a[i].idx < b[j].idx {
-            i += 1;
-            continue;
-        } else if b[j].idx < a[i].idx {
-            j += 1;
-            continue;
-        } else {
-            // both have feature
-            assert_eq!(a[i].idx, b[j].idx);
-            sum += a[i].value * b[j].value;
-            i += 1;
-            j += 1;
-        }
-    }
-    sum
+pub fn collect_reader(reader: Box<io::BufRead>) -> Result<Vec<Instance>, FileParseError> {
+    instances(reader).collect()
 }
 
 #[cfg(test)]
@@ -294,6 +288,33 @@ mod tests {
     use super::ParseError::*;
     use super::*;
     use std::result::Result;
+
+    /// This calculates the dot product between two instances efficiently, given that their
+    /// features are sorted already.
+    fn dot_product(lhs: &Instance, rhs: &Instance) -> f32 {
+        let ref a = lhs.features;
+        let ref b = rhs.features;
+        let mut i = 0;
+        let mut j = 0;
+
+        let mut sum = 0.0;
+        while i < a.len() && j < b.len() {
+            if a[i].idx < b[j].idx {
+                i += 1;
+                continue;
+            } else if b[j].idx < a[i].idx {
+                j += 1;
+                continue;
+            } else {
+                // both have feature
+                assert_eq!(a[i].idx, b[j].idx);
+                sum += a[i].value * b[j].value;
+                i += 1;
+                j += 1;
+            }
+        }
+        sum
+    }
 
     #[test]
     fn test_qid() {
@@ -338,6 +359,11 @@ mod tests {
                 Label(ref lhs) => {
                     if let Label(ref rhs) = *other {
                         return lhs == rhs;
+                    }
+                }
+                LabelIsNan(_) => {
+                    if let LabelIsNan(_) = *other {
+                        return true;
                     }
                 }
                 FeatureNum(ref lhs) => {

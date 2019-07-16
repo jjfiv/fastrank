@@ -1,10 +1,12 @@
+use crate::evaluators::*;
+use crate::io_helper;
+use crate::libsvm;
+use crate::qrel::QuerySetJudgments;
+use crate::Model;
+use ordered_float::NotNan;
 use std::collections::HashMap;
 use std::collections::HashSet;
-use ordered_float::NotNan;
 use std::f64;
-use crate::libsvm;
-use crate::Model;
-use crate::evaluators::{RankedInstance, Evaluator};
 
 pub enum Features {
     Dense32(Vec<f32>),
@@ -87,16 +89,46 @@ pub struct RankingDataset {
 }
 
 impl RankingDataset {
+    pub fn make_evaluator(
+        &self,
+        orig_name: &str,
+        judgments: Option<QuerySetJudgments>,
+    ) -> Result<Box<Evaluator>, Box<std::error::Error>> {
+        let (name, depth) = if let Some(at_point) = orig_name.find("@") {
+            let (lhs, rhs) = orig_name.split_at(at_point);
+            let depth = rhs[1..]
+                .parse::<usize>()
+                .map_err(|_| format!("Couldn't parse after the @ in \"{}\": {}", orig_name, rhs))?;
+            (lhs.to_lowercase(), Some(depth))
+        } else {
+            (orig_name.to_lowercase(), None)
+        };
+        Ok(match name.as_str() {
+            "ap" | "map" => Box::new(AveragePrecision::new(&self, judgments.clone())),
+            "rr" | "mrr" => Box::new(ReciprocalRank),
+            "ndcg" => Box::new(NDCG::new(depth, &self, judgments.clone())),
+            _ => Err(format!("Invalid training measure: \"{}\"", orig_name))?,
+        })
+    }
+
     pub fn evaluate_mean(&self, model: &Model, evaluator: &Evaluator) -> f64 {
         let worst_prediction = NotNan::new(f64::MIN).unwrap();
         let mut sum_score = 0.0;
         let num_scores = self.data_by_query.len() as f64;
         for (qid, docs) in self.data_by_query.iter() {
             // Predict for every document:
-            let mut ranked_list: Vec<_> = docs.iter().cloned().map(|index| {
-                let prediction = NotNan::new(model.score(&self.instances[index].features));
-                RankedInstance::new(prediction.unwrap_or(worst_prediction), self.instances[index].gain, index as u32)
-            }).collect();
+            let mut ranked_list: Vec<_> = docs
+                .iter()
+                .cloned()
+                .map(|index| {
+                    let prediction = NotNan::new(model.score(&self.instances[index].features));
+                    RankedInstance::new(
+                        prediction.unwrap_or(worst_prediction),
+                        self.instances[index].gain,
+                        index as u32,
+                    )
+                })
+                .collect();
             // Sort largest to smallest:
             ranked_list.sort_unstable();
             sum_score += evaluator.score(&qid, &ranked_list);
@@ -104,13 +136,16 @@ impl RankingDataset {
         sum_score / num_scores
     }
 
-    pub fn import(data: Vec<libsvm::Instance>) -> Result<Self, &'static str> {
-        let instances: Result<Vec<_>, _> = data
-            .into_iter()
-            .map(|i| TrainingInstance::try_new(i))
-            .collect();
-        Ok(Self::new(instances?))
+    pub fn load_libsvm(path: &str) -> Result<Self, Box<std::error::Error>> {
+        let reader = io_helper::open_reader(path)?;
+        let mut instances = Vec::new();
+        for inst in libsvm::instances(reader) {
+            let inst = TrainingInstance::try_new(inst?)?;
+            instances.push(inst);
+        }
+        Ok(Self::new(instances))
     }
+
     pub fn new(data: Vec<TrainingInstance>) -> Self {
         // Collect features that are actually present.
         let mut features: HashSet<u32> = HashSet::new();
@@ -123,7 +158,6 @@ impl RankingDataset {
                 .push(i);
             features.extend(inst.features.ids());
         }
-        
         // Get a sorted list of active features in this dataset.
         let mut features: Vec<u32> = features.iter().cloned().collect();
         features.sort_unstable();
@@ -136,6 +170,11 @@ impl RankingDataset {
             .expect("No features defined!")
             + 1;
 
-        Self { instances: data, features, n_dim, data_by_query }
+        Self {
+            instances: data,
+            features,
+            n_dim,
+            data_by_query,
+        }
     }
 }

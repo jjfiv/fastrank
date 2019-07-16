@@ -137,7 +137,6 @@ impl CoordinateAscentParams {
 
             // Initialize to even weights:
             model.reset_uniform();
-            println!("{:?}", model.weights);
 
             // Initialize this local best (within current restart cycle):
             let start_score = data.evaluate_mean(&model, evaluator);

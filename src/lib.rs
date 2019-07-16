@@ -2,14 +2,14 @@ use ordered_float::NotNan;
 
 /// Contains code for feature-at-a-time non-differentiable optimization.
 pub mod coordinate_ascent;
-/// Contains code for reading ranklib and libsvm input files.
-pub mod libsvm;
 pub mod dataset;
 pub mod evaluators;
 pub mod io_helper;
+/// Contains code for reading ranklib and libsvm input files.
+pub mod libsvm;
 pub mod qrel;
 
-pub trait Model : std::fmt::Debug {
+pub trait Model: std::fmt::Debug {
     fn score(&self, features: &dataset::Features) -> f64;
 }
 
