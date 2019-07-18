@@ -51,22 +51,25 @@ impl DenseLinearRankingModel {
         }
     }
 
-    fn reset<R: Rng>(&mut self, init_random: bool, rand: &mut R) {
+    fn reset<R: Rng>(&mut self, init_random: bool, rand: &mut R, valid_features: &[u32]) {
         if init_random {
-            for i in 0..self.weights.len() {
-                self.weights[i] = rand.gen_range(-1.0, 1.0);
+            for i in valid_features.iter() {
+                self.weights[*i as usize] = rand.gen_range(-1.0, 1.0);
             }
         } else {
-            self.reset_uniform();
+            self.reset_uniform(valid_features);
         }
     }
 
-    fn reset_uniform(&mut self) {
+    fn reset_uniform(&mut self, valid_features: &[u32]) {
         let n_dim = self.weights.len();
         // Initialize to even weights:
         self.weights.clear();
         assert_eq!(0, self.weights.len());
-        self.weights.resize(n_dim, 1.0 / (n_dim as f64));
+        self.weights.resize(n_dim, 0.0);
+        for i in valid_features.iter() {
+            self.weights[*i as usize] = 1.0 / (valid_features.len() as f64);
+        }
         assert_eq!(n_dim, self.weights.len());
     }
 
@@ -131,7 +134,7 @@ fn optimize_inner<R: Rng>(
 
     // Initialize to even weights:
     let mut model = DenseLinearRankingModel::new(data.n_dim);
-    model.reset(params.init_random, &mut rand);
+    model.reset(params.init_random, &mut rand, &data.features);
 
     // Initialize this local best (within current restart cycle):
     let start_score = data.evaluate_mean(&model, evaluator);
@@ -145,7 +148,13 @@ fn optimize_inner<R: Rng>(
         if !quiet {
             println!("Shuffle features and optimize!");
             println!("----------------------------------------");
-            println!("{:4}|{:<16}|{:>9}|{:>9}", restart_id, "Feature", "Weight", evaluator.name());
+            println!(
+                "{:4}|{:<16}|{:>9}|{:>9}",
+                restart_id,
+                "Feature",
+                "Weight",
+                evaluator.name()
+            );
             println!("----------------------------------------");
         }
 
@@ -187,7 +196,10 @@ fn optimize_inner<R: Rng>(
 
                         if current_best.replace_if_better(score, model.clone()) {
                             if !quiet {
-                                println!("{:4}|{:<16}|{:>9.3}|{:>9.3}", restart_id, current_feature_name, w, score);
+                                println!(
+                                    "{:4}|{:<16}|{:>9.3}|{:>9.3}",
+                                    restart_id, current_feature_name, w, score
+                                );
                             }
                         }
 
@@ -222,8 +234,6 @@ fn optimize_inner<R: Rng>(
 impl CoordinateAscentParams {
     pub fn learn(&self, data: &RankingDataset, evaluator: &Evaluator) -> Box<Model> {
         let mut rand = Xoshiro256StarStar::seed_from_u64(self.seed);
-        let tolerance = NotNan::new(self.tolerance).expect("Tolerance param should not be NaN.");
-        let mut history: Vec<Scored<DenseLinearRankingModel>> = Vec::new();
 
         if !self.quiet {
             println!("---------------------------");

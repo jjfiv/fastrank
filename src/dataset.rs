@@ -97,7 +97,10 @@ impl TrainingInstance {
 pub fn load_feature_names_json(path: &str) -> Result<HashMap<u32, String>, Box<std::error::Error>> {
     let reader = io_helper::open_reader(path)?;
     let data: HashMap<String, String> = serde_json::from_reader(reader)?;
-    let data: Result<HashMap<u32, String>, _> = data.into_iter().map(|(k,v)| k.parse::<u32>().map(|num| (num, v)) ).collect();
+    let data: Result<HashMap<u32, String>, _> = data
+        .into_iter()
+        .map(|(k, v)| k.parse::<u32>().map(|num| (num, v)))
+        .collect();
     Ok(data?)
 }
 
@@ -110,6 +113,41 @@ pub struct RankingDataset {
 }
 
 impl RankingDataset {
+    /// Remove a feature or return "not-found".
+    pub fn try_remove_feature(&mut self, name_or_num: &str) -> Result<(), String> {
+        if let Some((num, _)) = self
+            .feature_names
+            .iter()
+            .find(|(_, v)| v.as_str() == name_or_num)
+        {
+            if let Some(idx) = self.features.iter().position(|n| n == num) {
+                self.features.swap_remove(idx);
+                return Ok(());
+            } else {
+                return Err(format!(
+                    "Named feature not present in actual dataset! {}",
+                    name_or_num
+                ))?;
+            }
+        }
+
+        let num = name_or_num.parse::<u32>().map_err(|_| {
+            format!(
+                "Could not turn {} into a name or number in this dataset.",
+                name_or_num
+            )
+        })?;
+        if let Some(idx) = self.features.iter().position(|n| *n == num) {
+            self.features.swap_remove(idx);
+            return Ok(());
+        } else {
+            return Err(format!(
+                "Feature #{} not present in actual dataset!",
+                name_or_num
+            ))?;
+        }
+    }
+
     pub fn make_evaluator(
         &self,
         orig_name: &str,
@@ -155,7 +193,10 @@ impl RankingDataset {
         sum_score / num_scores
     }
 
-    pub fn load_libsvm(path: &str, feature_names: Option<&HashMap<u32, String>>) -> Result<Self, Box<std::error::Error>> {
+    pub fn load_libsvm(
+        path: &str,
+        feature_names: Option<&HashMap<u32, String>>,
+    ) -> Result<Self, Box<std::error::Error>> {
         let reader = io_helper::open_reader(path)?;
         let mut instances = Vec::new();
         for inst in libsvm::instances(reader) {
@@ -194,7 +235,7 @@ impl RankingDataset {
             features,
             n_dim,
             data_by_query,
-            feature_names: feature_names.cloned().unwrap_or(HashMap::new())
+            feature_names: feature_names.cloned().unwrap_or(HashMap::new()),
         }
     }
 }

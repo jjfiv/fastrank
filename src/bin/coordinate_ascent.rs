@@ -16,6 +16,13 @@ fn main() -> Result<(), Box<Error>> {
                 .long("feature_names")
                 .takes_value(true),
         )
+        .arg(
+            Arg::with_name("ignore_features")
+                .long("ignore")
+                .short("i")
+                .takes_value(true)
+                .multiple(true),
+        )
         .arg(Arg::with_name("seed").long("seed").takes_value(true))
         // Optional loading of query relevance files.
         .arg(Arg::with_name("qrel").long("qrel").takes_value(true))
@@ -28,13 +35,11 @@ fn main() -> Result<(), Box<Error>> {
         .arg(
             Arg::with_name("iterations")
                 .long("num_max_iterations")
-                .short("i")
                 .takes_value(true),
         )
         .arg(
             Arg::with_name("tolerance")
                 .long("tolerance")
-                .short("t")
                 .takes_value(true),
         )
         .arg(Arg::with_name("normalize_weights").long("normalize_weights"))
@@ -79,11 +84,18 @@ fn main() -> Result<(), Box<Error>> {
         .value_of("FEATURE_NAMES_FILE")
         .map(|path| dataset::load_feature_names_json(path))
         .transpose()?;
-    let train_dataset = RankingDataset::load_libsvm(input, feature_names.as_ref())?;
+    let mut train_dataset = RankingDataset::load_libsvm(input, feature_names.as_ref())?;
     let test_dataset = matches
         .value_of("TEST_FILE")
         .map(|test_file| RankingDataset::load_libsvm(test_file, feature_names.as_ref()))
         .transpose()?;
+
+    if let Some(features_to_ignore) = matches.values_of("ignore_features") {
+        // Only need to remove it from training.
+        for ftr in features_to_ignore {
+            train_dataset.try_remove_feature(ftr)?;
+        }
+    }
 
     let evaluator = train_dataset.make_evaluator(
         matches.value_of("training_measure").unwrap_or("map"),

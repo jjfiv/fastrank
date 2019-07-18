@@ -1,7 +1,6 @@
 use crate::dataset::*;
 use crate::qrel::QuerySetJudgments;
 use ordered_float::NotNan;
-use std::cmp::min;
 use std::cmp::Ordering;
 use std::collections::HashMap;
 use std::sync::Arc;
