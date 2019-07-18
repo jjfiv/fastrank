@@ -8,9 +8,11 @@ pub mod evaluators;
 pub mod io_helper;
 /// Contains code for reading ranklib and libsvm input files.
 pub mod libsvm;
-pub mod qrel;
 pub mod model;
+pub mod qrel;
 
+/// Streaming computation of statistics.
+pub mod stats;
 
 #[derive(Clone, Debug)]
 pub struct Scored<T: Clone> {
