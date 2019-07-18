@@ -1,5 +1,6 @@
 use clap::{App, Arg};
 use fastrank::coordinate_ascent::*;
+use fastrank::dataset;
 use fastrank::dataset::RankingDataset;
 use fastrank::qrel;
 use std::error::Error;
@@ -10,6 +11,11 @@ fn main() -> Result<(), Box<Error>> {
         .about("Learn a linear ranking model.")
         .arg(Arg::with_name("TRAIN_FILE").required(true))
         .arg(Arg::with_name("TEST_FILE").long("test").takes_value(true))
+        .arg(
+            Arg::with_name("FEATURE_NAMES_FILE")
+                .long("feature_names")
+                .takes_value(true),
+        )
         .arg(Arg::with_name("seed").long("seed").takes_value(true))
         // Optional loading of query relevance files.
         .arg(Arg::with_name("qrel").long("qrel").takes_value(true))
@@ -69,10 +75,14 @@ fn main() -> Result<(), Box<Error>> {
         .value_of("TRAIN_FILE")
         .ok_or("You need a training file to learn a model!")?;
 
-    let train_dataset = RankingDataset::load_libsvm(input)?;
+    let feature_names = matches
+        .value_of("FEATURE_NAMES_FILE")
+        .map(|path| dataset::load_feature_names_json(path))
+        .transpose()?;
+    let train_dataset = RankingDataset::load_libsvm(input, feature_names.as_ref())?;
     let test_dataset = matches
         .value_of("TEST_FILE")
-        .map(|test_file| RankingDataset::load_libsvm(test_file))
+        .map(|test_file| RankingDataset::load_libsvm(test_file, feature_names.as_ref()))
         .transpose()?;
 
     let evaluator = train_dataset.make_evaluator(

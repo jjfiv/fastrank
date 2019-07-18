@@ -94,11 +94,19 @@ impl TrainingInstance {
     }
 }
 
+pub fn load_feature_names_json(path: &str) -> Result<HashMap<u32, String>, Box<std::error::Error>> {
+    let reader = io_helper::open_reader(path)?;
+    let data: HashMap<String, String> = serde_json::from_reader(reader)?;
+    let data: Result<HashMap<u32, String>, _> = data.into_iter().map(|(k,v)| k.parse::<u32>().map(|num| (num, v)) ).collect();
+    Ok(data?)
+}
+
 pub struct RankingDataset {
     pub instances: Vec<TrainingInstance>,
     pub features: Vec<u32>,
     pub n_dim: u32,
     pub data_by_query: HashMap<String, Vec<usize>>,
+    pub feature_names: HashMap<u32, String>,
 }
 
 impl RankingDataset {
@@ -147,17 +155,17 @@ impl RankingDataset {
         sum_score / num_scores
     }
 
-    pub fn load_libsvm(path: &str) -> Result<Self, Box<std::error::Error>> {
+    pub fn load_libsvm(path: &str, feature_names: Option<&HashMap<u32, String>>) -> Result<Self, Box<std::error::Error>> {
         let reader = io_helper::open_reader(path)?;
         let mut instances = Vec::new();
         for inst in libsvm::instances(reader) {
             let inst = TrainingInstance::try_new(inst?)?;
             instances.push(inst);
         }
-        Ok(Self::new(instances))
+        Ok(Self::new(instances, feature_names))
     }
 
-    pub fn new(data: Vec<TrainingInstance>) -> Self {
+    pub fn new(data: Vec<TrainingInstance>, feature_names: Option<&HashMap<u32, String>>) -> Self {
         // Collect features that are actually present.
         let mut features: HashSet<u32> = HashSet::new();
         // Collect training instances by the query.
@@ -186,6 +194,7 @@ impl RankingDataset {
             features,
             n_dim,
             data_by_query,
+            feature_names: feature_names.cloned().unwrap_or(HashMap::new())
         }
     }
 }

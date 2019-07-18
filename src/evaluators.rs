@@ -142,7 +142,7 @@ impl NDCG {
             // Insert ideal if available:
             query_norms.insert(
                 qid.clone(),
-                if ideal_gains.is_empty() {
+                if ideal_gains.iter().filter(|g| g.into_inner() > 0.0).count() == 0 {
                     None
                 } else {
                     Some(compute_dcg(&ideal_gains, depth, true))

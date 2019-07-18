@@ -6,8 +6,8 @@ use ordered_float::NotNan;
 use rand::prelude::*;
 use rand_xoshiro::rand_core::SeedableRng;
 use rand_xoshiro::Xoshiro256StarStar;
-use std::sync::Arc;
 use rayon::prelude::*;
+use std::sync::Arc;
 
 #[derive(Clone, Debug)]
 pub struct CoordinateAscentParams {
@@ -120,7 +120,11 @@ impl Model for DenseLinearRankingModel {
 const SIGN: &[i32] = &[0, -1, 1];
 
 fn optimize_inner<R: Rng>(
-    restart_id: u32, data: &RankingDataset, evaluator: &Evaluator, mut rand: R, params: &CoordinateAscentParams
+    restart_id: u32,
+    data: &RankingDataset,
+    evaluator: &Evaluator,
+    mut rand: R,
+    params: &CoordinateAscentParams,
 ) -> Scored<DenseLinearRankingModel> {
     let quiet = params.quiet;
     let tolerance = NotNan::new(params.tolerance).unwrap();
@@ -140,9 +144,9 @@ fn optimize_inner<R: Rng>(
 
         if !quiet {
             println!("Shuffle features and optimize!");
-            println!("---------------------------");
-            println!("{:>9}|{:>9}|{:>9}", "Feature", "Weight", evaluator.name());
-            println!("---------------------------");
+            println!("----------------------------------------");
+            println!("{:4}|{:<16}|{:>9}|{:>9}", restart_id, "Feature", "Weight", evaluator.name());
+            println!("----------------------------------------");
         }
 
         let successes = fids
@@ -154,7 +158,13 @@ fn optimize_inner<R: Rng>(
                     model.l1_normalize();
                 }
 
+                let current_feature_name = data
+                    .feature_names
+                    .get(current_feature)
+                    .cloned()
+                    .unwrap_or(format!("{}", current_feature));
                 let current_feature = *current_feature as usize;
+
                 let orig_weight = model.weights[current_feature];
                 let mut total_step;
 
@@ -177,10 +187,7 @@ fn optimize_inner<R: Rng>(
 
                         if current_best.replace_if_better(score, model.clone()) {
                             if !quiet {
-                                println!(
-                                    "{:>9}|{:>9.3}|{:>9.3}",
-                                    current_feature, w, score
-                                );
+                                println!("{:4}|{:<16}|{:>9.3}|{:>9.3}", restart_id, current_feature_name, w, score);
                             }
                         }
 
@@ -224,9 +231,14 @@ impl CoordinateAscentParams {
             println!("---------------------------");
         }
 
-        let states: Vec<_> = (0..self.num_restarts).map(|restart_id| 
-            (restart_id, Xoshiro256StarStar::seed_from_u64(rand.next_u64()))
-        ).collect();
+        let states: Vec<_> = (0..self.num_restarts)
+            .map(|restart_id| {
+                (
+                    restart_id,
+                    Xoshiro256StarStar::seed_from_u64(rand.next_u64()),
+                )
+            })
+            .collect();
 
         let mut history: Vec<Scored<DenseLinearRankingModel>> = Vec::new();
         history.par_extend(states.into_par_iter().map(|(restart_id, rand)| {
