@@ -70,15 +70,47 @@ impl Evaluator for ReciprocalRank {
     }
 }
 
-fn compute_dcg(gains: &[NotNan<f32>], depth: Option<usize>) -> f64 {
+fn compute_dcg(gains: &[NotNan<f32>], depth: Option<usize>, ideal: bool) -> f64 {
+    // Gain of 0.0 is a positive value, so we need to expand or contact to "depth" if it's given.
+    let mut gain_vector: Vec<NotNan<f32>> = gains.iter().cloned().collect();
+    if ideal {
+        gain_vector.sort_unstable();
+        gain_vector.reverse();
+    }
+    if let Some(depth) = depth {
+        gain_vector.resize(depth, NotNan::new(0.0).unwrap());
+    }
     let mut dcg = 0.0;
-    let depth = depth.unwrap_or(gains.len());
-    for i in 0..min(depth, gains.len()) {
-        let gain = gains[i].into_inner() as f64;
+    for (i, gain) in gain_vector.into_iter().enumerate() {
         let i = i as f64;
+        let gain = gain.into_inner() as f64;
         dcg += ((2.0 as f64).powf(gain) - 1.0) / (i + 2.0).log2();
     }
     dcg
+}
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const TREC_TOLERANCE: f64 = 0.00005;
+
+    fn assert_trec_eq(x: f64, y: f64) {
+        if (x - y).abs() > TREC_TOLERANCE {
+            panic!("{} != {} at tolerance={}", x, y, TREC_TOLERANCE);
+        }
+    }
+
+    #[test]
+    fn test_compute_ndcg() {
+        let data: Vec<NotNan<f32>> = [0.0, 1.0, 1.0, 1.0, 0.0, 0.0]
+            .iter()
+            .map(|v| NotNan::new(*v).unwrap())
+            .collect();
+        let ideal = compute_dcg(&data, None, true);
+        let actual = compute_dcg(&data, None, false);
+
+        assert_trec_eq(0.7328, actual / ideal);
+    }
 }
 
 #[derive(Clone)]
@@ -101,22 +133,19 @@ impl NDCG {
                 .and_then(|j| j.get(qid))
                 .map(|data| data.gain_vector());
             // Calculate if unavailable in config:
-            let mut ideal_gains: Vec<NotNan<f32>> = all_gains.unwrap_or_else(|| {
+            let ideal_gains: Vec<NotNan<f32>> = all_gains.unwrap_or_else(|| {
                 instance_ids
                     .iter()
                     .map(|index| dataset.instances[*index].gain)
-                    .filter(|g| g.into_inner() > 0.0)
                     .collect()
             });
-
-            // Sort descending:
-            ideal_gains.sort_unstable_by(|lhs, rhs| rhs.cmp(lhs));
+            // Insert ideal if available:
             query_norms.insert(
                 qid.clone(),
                 if ideal_gains.is_empty() {
                     None
                 } else {
-                    Some(compute_dcg(&ideal_gains, depth))
+                    Some(compute_dcg(&ideal_gains, depth, true))
                 },
             );
         }
@@ -140,22 +169,16 @@ impl Evaluator for NDCG {
         let actual_gain_vector: Vec<_> = ranked_list.iter().map(|ri| ri.gain).collect();
 
         let normalizer = self.ideal_gains.get(qid).cloned().unwrap_or_else(|| {
-            let mut gain_vector: Vec<_> = actual_gain_vector
-                .iter()
-                .filter(|g| g.into_inner() > 0.0)
-                .cloned()
-                .collect();
-            gain_vector.sort_unstable_by(|lhs, rhs| rhs.cmp(lhs));
-            if gain_vector.is_empty() {
+            if actual_gain_vector.is_empty() {
                 None
             } else {
-                Some(compute_dcg(&gain_vector, self.depth))
+                Some(compute_dcg(&actual_gain_vector, self.depth, true))
             }
         });
 
         if let Some(ideal_dcg) = normalizer {
             // Compute NDCG:
-            let actual_dcg = compute_dcg(&actual_gain_vector, self.depth);
+            let actual_dcg = compute_dcg(&actual_gain_vector, self.depth, false);
             if actual_dcg > ideal_dcg {
                 panic!(
                     "qid: {}, actual_gain_vector: {:?} ideal_dcg: {}",
