@@ -1,7 +1,7 @@
 use crate::dataset::*;
 use crate::evaluators::Evaluator;
-use crate::WeightedEnsemble;
-use crate::{Model, Scored};
+use crate::model::{WeightedEnsemble, Model};
+use crate::Scored;
 use ordered_float::NotNan;
 use rand::prelude::*;
 use rand_xoshiro::rand_core::SeedableRng;
@@ -277,7 +277,7 @@ impl CoordinateAscentParams {
                     Scored::new(sm.score.into_inner(), m)
                 })
                 .collect();
-            Box::new(WeightedEnsemble(members))
+            Box::new(WeightedEnsemble::new(members))
         } else {
             Box::new(
                 history

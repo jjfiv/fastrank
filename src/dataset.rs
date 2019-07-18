@@ -2,7 +2,7 @@ use crate::evaluators::*;
 use crate::io_helper;
 use crate::libsvm;
 use crate::qrel::QuerySetJudgments;
-use crate::Model;
+use crate::model::Model;
 use ordered_float::NotNan;
 use std::collections::HashMap;
 use std::collections::HashSet;

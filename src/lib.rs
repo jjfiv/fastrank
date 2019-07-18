@@ -1,6 +1,5 @@
 use ordered_float::NotNan;
 use std::cmp::Ordering;
-use std::sync::Arc;
 
 /// Contains code for feature-at-a-time non-differentiable optimization.
 pub mod coordinate_ascent;
@@ -10,23 +9,8 @@ pub mod io_helper;
 /// Contains code for reading ranklib and libsvm input files.
 pub mod libsvm;
 pub mod qrel;
+pub mod model;
 
-pub trait Model: std::fmt::Debug {
-    fn score(&self, features: &dataset::Features) -> NotNan<f64>;
-}
-
-#[derive(Debug, Clone)]
-pub struct WeightedEnsemble(Vec<Scored<Arc<dyn Model>>>);
-
-impl Model for WeightedEnsemble {
-    fn score(&self, features: &dataset::Features) -> NotNan<f64> {
-        let mut output = 0.0;
-        for scored_m in self.0.iter() {
-            output += scored_m.score.into_inner() * scored_m.item.score(features).into_inner();
-        }
-        NotNan::new(output).expect("NaN produced by ensemble.")
-    }
-}
 
 #[derive(Clone, Debug)]
 pub struct Scored<T: Clone> {
