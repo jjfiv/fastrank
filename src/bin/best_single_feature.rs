@@ -97,6 +97,17 @@ fn main() -> Result<(), Box<Error>> {
 
     let mut models = Vec::new();
 
+    if !quiet {
+        println!("--------------------------------------");
+        println!(
+            "{:3} | {:16} | {:4} | {:.5}",
+            "#",
+            "Feature Name",
+            "Dir",
+            evaluator.name()
+        );
+        println!("--------------------------------------");
+    }
     // explore all features:
     let multiplier = &[-1.0, 1.0];
     for fid in train_dataset.features.iter().cloned() {
@@ -104,14 +115,28 @@ fn main() -> Result<(), Box<Error>> {
             .as_ref()
             .and_then(|names| names.get(&fid).cloned())
             .unwrap_or(format!("{}", fid));
-        for dir in multiplier.iter().cloned() {
-            let model = SingleFeatureModel { fid, dir };
-            let perf = train_dataset.evaluate_mean(&model, evaluator.as_ref());
-            if !quiet {
-                println!("{} | {:16} | {:1.0} | {:.3}", fid, feature_name, dir, perf);
-            }
-            models.push(Scored::new(perf, model));
+        let best_by_dir = multiplier
+            .iter()
+            .cloned()
+            .map(|dir| {
+                let model = SingleFeatureModel { fid, dir };
+                let perf = train_dataset.evaluate_mean(&model, evaluator.as_ref());
+                Scored::new(perf, model)
+            })
+            .max()
+            .unwrap();
+
+        if !quiet {
+            println!(
+                "{:3} | {:16} | {:4.0} | {:2.3}",
+                fid, feature_name, best_by_dir.item.dir, best_by_dir.score
+            );
         }
+
+        models.push(best_by_dir);
+    }
+    if !quiet {
+        println!("--------------------------------------");
     }
 
     models.sort_unstable();
