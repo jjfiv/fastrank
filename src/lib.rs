@@ -16,6 +16,7 @@ pub mod qrel;
 
 /// Streaming computation of statistics.
 pub mod stats;
+pub mod random_forest;
 
 #[derive(Clone, Debug)]
 pub struct Scored<T: Clone> {
