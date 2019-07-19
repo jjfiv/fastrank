@@ -105,7 +105,7 @@ pub enum Features {
 impl Features {
     pub fn get(&self, idx: u32) -> Option<f64> {
         match self {
-            Features::Dense32(arr) => Some(f64::from(arr[idx as usize])),
+            Features::Dense32(arr) => arr.get(idx as usize).map(|val| f64::from(*val)),
             Features::Sparse32(features) => {
                 for (fidx, val) in features.iter() {
                     if *fidx == idx {

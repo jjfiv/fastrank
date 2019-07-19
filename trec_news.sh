@@ -1,6 +1,7 @@
 #!/bin/bash
 
-DIR="${HOME}/code/irene/scripts"
+#DIR="${HOME}/code/irene/scripts"
+DIR="news-bg"
 
 cargo build --release && 
   ./target/release/coordinate_ascent ${DIR}/train0.ranklib \

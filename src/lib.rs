@@ -39,7 +39,7 @@ impl<T: Clone> Ord for Scored<T> {
     }
 }
 impl<T: Clone> Scored<T> {
-    fn new(score: f64, item: T) -> Self {
+    pub fn new(score: f64, item: T) -> Self {
         Self {
             score: NotNan::new(score).expect("NaN found!"),
             item,
