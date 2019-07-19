@@ -1,5 +1,5 @@
-use crate::Scored;
 use crate::dataset;
+use crate::Scored;
 
 use ordered_float::NotNan;
 use std::sync::Arc;

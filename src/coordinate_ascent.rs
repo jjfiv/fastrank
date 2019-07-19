@@ -1,6 +1,6 @@
 use crate::dataset::*;
 use crate::evaluators::Evaluator;
-use crate::model::{WeightedEnsemble, Model};
+use crate::model::{Model, WeightedEnsemble};
 use crate::Scored;
 use ordered_float::NotNan;
 use rand::prelude::*;
@@ -94,19 +94,9 @@ impl DenseLinearRankingModel {
                     output += f64::from(feature) * weight;
                 }
             }
-            Features::Dense64(arr) => {
-                for (feature, weight) in arr.iter().cloned().zip(weights.iter().cloned()) {
-                    output += feature * weight;
-                }
-            }
             Features::Sparse32(arr) => {
                 for (idx, feature) in arr.iter().cloned() {
                     output += f64::from(feature) * weights[idx as usize];
-                }
-            }
-            Features::Sparse64(arr) => {
-                for (idx, feature) in arr.iter().cloned() {
-                    output += feature * weights[idx as usize];
                 }
             }
         };

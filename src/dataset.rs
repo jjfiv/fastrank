@@ -1,41 +1,115 @@
 use crate::evaluators::*;
 use crate::io_helper;
 use crate::libsvm;
-use crate::qrel::QuerySetJudgments;
 use crate::model::Model;
+use crate::qrel::QuerySetJudgments;
+use crate::stats::{ComputedStats, StreamingStats};
 use ordered_float::NotNan;
 use std::collections::HashMap;
 use std::collections::HashSet;
 use std::f64;
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FeatureStats {
+    pub feature_stats: HashMap<u32, ComputedStats>,
+}
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum Normalizer {
+    MaxMinNormalizer(FeatureStats),
+    ZScoreNormalizer(FeatureStats),
+    SigmoidNormalizer(),
+}
+
+impl Normalizer {
+    pub fn new(method: &str, dataset: &RankingDataset) -> Result<Normalizer, String> {
+        Ok(match method {
+            "zscore" => Normalizer::ZScoreNormalizer(dataset.compute_feature_stats()),
+            "maxmin" | "linear" => Normalizer::MaxMinNormalizer(dataset.compute_feature_stats()),
+            "sigmoid" => Normalizer::SigmoidNormalizer(),
+            unkn => Err(format!("Unsupported Normalizer: {}", unkn))?,
+        })
+    }
+    fn normalize(&self, fid: u32, val: f32) -> f32 {
+        match self {
+            Normalizer::MaxMinNormalizer(fs) => {
+                if let Some(stats) = fs.feature_stats.get(&fid) {
+                    let max = stats.max as f32;
+                    let min = stats.min as f32;
+                    if max == min {
+                        return 0.0;
+                    }
+                    match NotNan::new((val - min) / (max - min)) {
+                        Ok(out) => return out.into_inner(),
+                        Err(_) => panic!(
+                            "Normalization.maxmin NaN: {} {} {:?}",
+                            val,
+                            max - min,
+                            stats
+                        ),
+                    }
+                }
+            }
+            Normalizer::ZScoreNormalizer(fs) => {
+                if let Some(stats) = fs.feature_stats.get(&fid) {
+                    let mean = stats.mean as f32;
+                    let stddev = stats.variance.sqrt() as f32;
+                    if stddev == 0.0 {
+                        return 0.0;
+                    }
+                    match NotNan::new((val - mean) / stddev) {
+                        Ok(out) => return out.into_inner(),
+                        Err(_) => panic!(
+                            "Normalization.zscore NaN: {} {} {} {:?}",
+                            stats.mean,
+                            stats.variance,
+                            stats.variance.sqrt(),
+                            stats
+                        ),
+                    };
+                }
+            }
+            Normalizer::SigmoidNormalizer() => match NotNan::new(sigmoid(val)) {
+                Ok(out) => return out.into_inner() as f32,
+                Err(_) => panic!(
+                    "Normalization.sigmoid NaN: {} {} {} {} {}",
+                    val,
+                    val.exp(),
+                    -(val).exp(),
+                    sigmoid(val),
+                    fid
+                ),
+            },
+        }
+        // if no stats or match, original value.
+        val
+    }
+}
+
+/// [Numerically stable sigmoid](https://timvieira.github.io/blog/post/2014/02/11/exp-normalize-trick/)
+fn sigmoid(x: f32) -> f32 {
+    if x > 0.0 {
+        let z = (-x).exp();
+        1.0 / (1.0 + z)
+    } else {
+        let z = x.exp();
+        z / (1.0 + z)
+    }
+}
+
 pub enum Features {
     Dense32(Vec<f32>),
-    Dense64(Vec<f64>),
     /// Sparse 32-bit representation; must be sorted!
     Sparse32(Vec<(u32, f32)>),
-    /// Sparse 64-bit representation; must be sorted!
-    Sparse64(Vec<(u32, f64)>),
 }
 
 impl Features {
     pub fn get(&self, idx: u32) -> Option<f64> {
         match self {
             Features::Dense32(arr) => Some(f64::from(arr[idx as usize])),
-            Features::Dense64(arr) => Some(arr[idx as usize]),
             Features::Sparse32(features) => {
                 for (fidx, val) in features.iter() {
                     if *fidx == idx {
                         return Some(f64::from(*val));
-                    } else if *fidx > idx {
-                        break;
-                    }
-                }
-                None
-            }
-            Features::Sparse64(features) => {
-                for (fidx, val) in features.iter() {
-                    if *fidx == idx {
-                        return Some(*val);
                     } else if *fidx > idx {
                         break;
                     }
@@ -48,11 +122,32 @@ impl Features {
         let mut features: Vec<u32> = Vec::new();
         match self {
             Features::Dense32(arr) => features.extend(0..(arr.len() as u32)),
-            Features::Dense64(arr) => features.extend(0..(arr.len() as u32)),
             Features::Sparse32(arr) => features.extend(arr.iter().map(|(idx, _)| *idx)),
-            Features::Sparse64(arr) => features.extend(arr.iter().map(|(idx, _)| *idx)),
         }
         features
+    }
+    pub fn update_stats(&self, per_feature_stats: &mut HashMap<u32, StreamingStats>) {
+        for (fid, stats) in per_feature_stats.iter_mut() {
+            if let Some(x) = self.get(*fid) {
+                stats.push(x);
+            }
+            // Expliticly skip missing; so as not to make it part of normalization.
+        }
+    }
+    pub fn apply_normalization(&mut self, normalizer: &Normalizer) {
+        match self {
+            Features::Dense32(arr) => {
+                for (fid, val) in arr.iter_mut().enumerate() {
+                    let fid = fid as u32;
+                    *val = normalizer.normalize(fid, *val);
+                }
+            }
+            Features::Sparse32(arr) => {
+                for (fid, val) in arr.iter_mut() {
+                    *val = normalizer.normalize(*fid, *val);
+                }
+            }
+        }
     }
 }
 
@@ -108,11 +203,45 @@ pub struct RankingDataset {
     pub instances: Vec<TrainingInstance>,
     pub features: Vec<u32>,
     pub n_dim: u32,
+    pub normalization: Option<Normalizer>,
     pub data_by_query: HashMap<String, Vec<usize>>,
     pub feature_names: HashMap<u32, String>,
 }
 
 impl RankingDataset {
+    pub fn compute_feature_stats(&self) -> FeatureStats {
+        let mut stats_builders: HashMap<u32, StreamingStats> = self
+            .features
+            .iter()
+            .cloned()
+            .map(|fid| (fid, StreamingStats::new()))
+            .collect();
+        for inst in self.instances.iter() {
+            inst.features.update_stats(&mut stats_builders);
+        }
+
+        for (fid, stats) in stats_builders.iter() {
+            println!("fid={}\t{:?}", fid, stats);
+        }
+
+        FeatureStats {
+            feature_stats: stats_builders
+                .into_iter()
+                .flat_map(|(fid, stats)| stats.finish().map(|cs| (fid, cs)))
+                .collect(),
+        }
+    }
+
+    pub fn apply_normalization(&mut self, normalizer: &Normalizer) {
+        if self.normalization.is_some() {
+            panic!("Cannot apply normalization twice!");
+        }
+        for inst in self.instances.iter_mut() {
+            inst.features.apply_normalization(&normalizer);
+        }
+        self.normalization = Some(normalizer.clone());
+    }
+
     /// Remove a feature or return "not-found".
     pub fn try_remove_feature(&mut self, name_or_num: &str) -> Result<(), String> {
         if let Some((num, _)) = self
@@ -234,6 +363,7 @@ impl RankingDataset {
             instances: data,
             features,
             n_dim,
+            normalization: None,
             data_by_query,
             feature_names: feature_names.cloned().unwrap_or(HashMap::new()),
         }

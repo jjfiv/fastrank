@@ -1,5 +1,15 @@
 //! Derived from https://github.com/jjfiv/chai/blob/6e0e57f0924f9b4c99b5f8b01034681dcd69c76d/src/main/java/ciir/jfoley/chai/math/StreamingStats.java
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ComputedStats {
+    pub num_elements: u64,
+    pub mean: f64,
+    pub variance: f64,
+    pub max: f64,
+    pub min: f64,
+    pub total: f64,
+}
+
 #[derive(Debug, Clone)]
 pub struct StreamingStats {
     num_elements: u64,
@@ -24,6 +34,20 @@ impl Default for StreamingStats {
 }
 
 impl StreamingStats {
+    pub fn finish(&self) -> Option<ComputedStats> {
+        if let Some(var) = self.get_variance() {
+            Some(ComputedStats {
+                num_elements: self.num_elements,
+                mean: self.mean,
+                max: self.max,
+                min: self.min,
+                variance: var,
+                total: self.total,
+            })
+        } else {
+            None
+        }
+    }
     pub fn new() -> Self {
         Self::default()
     }

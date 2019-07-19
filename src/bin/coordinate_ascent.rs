@@ -1,6 +1,7 @@
 use clap::{App, Arg};
 use fastrank::coordinate_ascent::*;
 use fastrank::dataset;
+use fastrank::dataset::Normalizer;
 use fastrank::dataset::RankingDataset;
 use fastrank::qrel;
 use std::error::Error;
@@ -22,6 +23,11 @@ fn main() -> Result<(), Box<Error>> {
                 .short("i")
                 .takes_value(true)
                 .multiple(true),
+        )
+        .arg(
+            Arg::with_name("normalize_features")
+                .long("norm")
+                .takes_value(true),
         )
         .arg(Arg::with_name("seed").long("seed").takes_value(true))
         // Optional loading of query relevance files.
@@ -85,6 +91,8 @@ fn main() -> Result<(), Box<Error>> {
         .map(|path| dataset::load_feature_names_json(path))
         .transpose()?;
     let mut train_dataset = RankingDataset::load_libsvm(input, feature_names.as_ref())?;
+
+    // TODO: we open the test dataset up early to quickly get errors, but maybe we want to save the RAM? idk.
     let test_dataset = matches
         .value_of("TEST_FILE")
         .map(|test_file| RankingDataset::load_libsvm(test_file, feature_names.as_ref()))
@@ -95,6 +103,14 @@ fn main() -> Result<(), Box<Error>> {
         for ftr in features_to_ignore {
             train_dataset.try_remove_feature(ftr)?;
         }
+    }
+
+    let normalizer = matches
+        .value_of("normalize_features")
+        .map(|norm_name| Normalizer::new(norm_name, &train_dataset))
+        .transpose()?;
+    if let Some(norm) = &normalizer {
+        train_dataset.apply_normalization(norm);
     }
 
     let evaluator = train_dataset.make_evaluator(
@@ -113,7 +129,10 @@ fn main() -> Result<(), Box<Error>> {
         );
     }
 
-    if let Some(test_dataset) = test_dataset {
+    if let Some(mut test_dataset) = test_dataset {
+        if let Some(norm) = &normalizer {
+            test_dataset.apply_normalization(&norm);
+        }
         println!("Test Performance:");
         for measure in &["map", "rr", "ndcg@5", "ndcg"] {
             let evaluator = test_dataset.make_evaluator(measure, judgments.clone())?;
