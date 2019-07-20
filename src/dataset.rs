@@ -190,7 +190,9 @@ impl TrainingInstance {
     pub fn perceptron_label(&self) -> i32 {
         if self.is_relevant() {
             1
-        } else { -1 }
+        } else {
+            -1
+        }
     }
 }
 
@@ -222,7 +224,9 @@ impl RankingDataset {
             .collect();
 
         for index in instances.iter().cloned() {
-            self.instances[index as usize].features.update_stats(&mut stats_builders);
+            self.instances[index as usize]
+                .features
+                .update_stats(&mut stats_builders);
         }
 
         FeatureStats {

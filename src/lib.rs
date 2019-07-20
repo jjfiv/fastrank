@@ -14,9 +14,9 @@ pub mod libsvm;
 pub mod model;
 pub mod qrel;
 
+pub mod random_forest;
 /// Streaming computation of statistics.
 pub mod stats;
-pub mod random_forest;
 
 #[derive(Clone, Debug)]
 pub struct Scored<T: Clone> {

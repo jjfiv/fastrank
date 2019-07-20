@@ -9,7 +9,7 @@ use rand_xoshiro::rand_core::SeedableRng;
 use rand_xoshiro::Xoshiro256StarStar;
 use rayon::prelude::*;
 use std::cmp;
-use std::rc::Rc;
+use std::sync::Arc;
 
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum SplitSelectionStrategy {
@@ -46,26 +46,30 @@ impl SplitSelectionStrategy {
 
 #[derive(Clone, Debug)]
 pub struct RandomForestParams {
-    seed: u64,
-    quiet: bool,
-    split_method: SplitSelectionStrategy,
-    instance_sampling_rate: f64,
-    feature_sampling_rate: f64,
-    min_leaf_support: usize,
-    num_splits_per_feature: usize,
-    max_depth: usize,
+    pub seed: u64,
+    pub quiet: bool,
+    pub num_trees: u32,
+    pub weight_trees: bool,
+    pub split_method: SplitSelectionStrategy,
+    pub instance_sampling_rate: f64,
+    pub feature_sampling_rate: f64,
+    pub min_leaf_support: u32,
+    pub split_candidates: u32,
+    pub max_depth: u32,
 }
 
 impl Default for RandomForestParams {
     fn default() -> Self {
         Self {
+            weight_trees: false,
             seed: thread_rng().next_u64(),
             split_method: SplitSelectionStrategy::DifferenceInLabelMeans(),
             quiet: false,
+            num_trees: 100,
             instance_sampling_rate: 0.5,
             feature_sampling_rate: 0.25,
             min_leaf_support: 10,
-            num_splits_per_feature: 3,
+            split_candidates: 3,
             max_depth: 8,
         }
     }
@@ -80,6 +84,15 @@ pub enum TreeNode {
         rhs: Box<TreeNode>,
     },
     LeafNode(NotNan<f64>),
+}
+
+impl TreeNode {
+    fn depth(&self) -> u32 {
+        match self {
+            TreeNode::LeafNode(_) => 1,
+            TreeNode::FeatureSplit { lhs, rhs, .. } => 1 + cmp::max(lhs.depth(), rhs.depth()),
+        }
+    }
 }
 
 impl Model for TreeNode {
@@ -105,8 +118,7 @@ impl Model for TreeNode {
 }
 
 struct RecursionParams {
-    rand: Rc<Xoshiro256StarStar>,
-    current_depth: usize,
+    current_depth: u32,
     features: Vec<u32>,
     instances: Vec<u32>,
 }
@@ -114,7 +126,6 @@ struct RecursionParams {
 impl RecursionParams {
     fn subset(&self, instances: Vec<u32>) -> Self {
         Self {
-            rand: self.rand.clone(),
             current_depth: self.current_depth + 1,
             features: self.features.clone(),
             instances,
@@ -162,7 +173,7 @@ fn generate_split_candidate(
     dataset: &RankingDataset,
     stats: &stats::ComputedStats,
 ) -> Option<FeatureSplitCandidate> {
-    let k = params.num_splits_per_feature;
+    let k = params.split_candidates;
     let range = stats.max - stats.min;
 
     let mut instance_feature: Vec<Scored<u32>> = instances
@@ -192,7 +203,9 @@ fn generate_split_candidate(
     for (pos, score) in scores.iter().enumerate() {
         if score > &splits[splits_i] {
             let (lhs, rhs) = ids.split_at(pos);
-            if lhs.len() < params.min_leaf_support || rhs.len() < params.min_leaf_support {
+            if lhs.len() < params.min_leaf_support as usize
+                || rhs.len() < params.min_leaf_support as usize
+            {
                 continue;
             }
             let importance = params.split_method.importance(lhs, rhs, dataset);
@@ -202,6 +215,9 @@ fn generate_split_candidate(
                 importance,
             });
             splits_i += 1;
+            if splits_i >= splits.len() {
+                break;
+            }
         }
         // continue
     }
@@ -219,15 +235,79 @@ fn generate_split_candidate(
     })
 }
 
-pub fn learn(params: &RandomForestParams, dataset: &RankingDataset) -> Option<TreeNode> {
+pub fn learn_ensemble(
+    params: &RandomForestParams,
+    dataset: &RankingDataset,
+    evaluator: &Evaluator,
+) -> WeightedEnsemble {
+    let mut rand = Xoshiro256StarStar::seed_from_u64(params.seed);
+    let seeds: Vec<(u32, u64)> = (0..params.num_trees)
+        .map(|i| (i, rand.next_u64()))
+        .collect();
+
+    let mut trees: Vec<Scored<TreeNode>> = Vec::new();
+    if !params.quiet {
+        println!("-----------------------");
+        println!("|{:>7}|{:>7}|{:>7}|", "Tree", "Depth", evaluator.name());
+        println!("-----------------------");
+    }
+    trees.extend(seeds.into_iter().map(|(idx, rand_seed)| {
+        let tree = learn_decision_tree(rand_seed, params, dataset);
+        let eval = dataset.evaluate_mean(&tree, evaluator);
+        if !params.quiet {
+            println!("|{:>7}|{:>7}|{:>7.3}|", idx + 1, tree.depth(), eval);
+        }
+        Scored::new(eval, tree)
+    }));
+    if !params.quiet {
+        println!("-----------------------");
+    }
+
+    WeightedEnsemble::new(
+        trees
+            .into_iter()
+            .map(|tree| {
+                let m: Arc<dyn Model> = Arc::new(tree.item);
+                Scored::new(
+                    if params.weight_trees {
+                        tree.score.into_inner()
+                    } else {
+                        1.0
+                    },
+                    m,
+                )
+            })
+            .collect(),
+    )
+}
+
+pub fn learn_decision_tree(
+    rand_seed: u64,
+    params: &RandomForestParams,
+    dataset: &RankingDataset,
+) -> TreeNode {
+    let mut rand = Xoshiro256StarStar::seed_from_u64(rand_seed);
+    let n_features = cmp::max(
+        1,
+        ((dataset.features.len() as f64) * params.feature_sampling_rate) as usize,
+    );
+    let n_instances = cmp::max(
+        params.min_leaf_support as usize,
+        ((dataset.instances.len() as f64) * params.instance_sampling_rate) as usize,
+    );
     let step = RecursionParams {
-        rand: Rc::new(Xoshiro256StarStar::seed_from_u64(params.seed)),
-        features: dataset.features.clone(),
-        instances: (0..dataset.instances.len()).map(|i| i as u32).collect(),
+        features: dataset
+            .features
+            .choose_multiple(&mut rand, n_features)
+            .cloned()
+            .collect(),
+        instances: (0..dataset.instances.len())
+            .map(|i| i as u32)
+            .choose_multiple(&mut rand, n_instances),
         current_depth: 1,
     };
 
-    learn_recursive(params, dataset, &step)
+    learn_recursive(params, dataset, &step).unwrap_or(TreeNode::LeafNode(step.to_output(dataset)))
 }
 
 fn learn_recursive(
@@ -240,7 +320,7 @@ fn learn_recursive(
         return None;
     }
     // Cannot split further:
-    if step.instances.len() < params.min_leaf_support * 2 {
+    if step.instances.len() < (params.min_leaf_support * 2) as usize {
         return None;
     }
 
