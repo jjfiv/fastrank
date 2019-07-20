@@ -1,4 +1,5 @@
 //! Derived from https://github.com/jjfiv/chai/blob/6e0e57f0924f9b4c99b5f8b01034681dcd69c76d/src/main/java/ciir/jfoley/chai/math/StreamingStats.java
+use ordered_float::NotNan;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ComputedStats {
@@ -8,6 +9,21 @@ pub struct ComputedStats {
     pub max: f64,
     pub min: f64,
     pub total: f64,
+}
+
+impl ComputedStats {
+    pub fn mean(&self) -> NotNan<f64> {
+        NotNan::new(self.mean).expect("stddev::mean")
+    }
+    pub fn stddev(&self) -> NotNan<f64> {
+        NotNan::new(self.variance.sqrt()).expect("stddev::NaN")
+    }
+    pub fn max(&self) -> NotNan<f64> {
+        NotNan::new(self.max).expect("stddev::max")
+    }
+    pub fn min(&self) -> NotNan<f64> {
+        NotNan::new(self.min).expect("stddev::min")
+    }
 }
 
 #[derive(Debug, Clone)]

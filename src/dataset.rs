@@ -187,6 +187,11 @@ impl TrainingInstance {
     pub fn is_relevant(&self) -> bool {
         self.gain.into_inner() > 0.0
     }
+    pub fn perceptron_label(&self) -> i32 {
+        if self.is_relevant() {
+            1
+        } else { -1 }
+    }
 }
 
 pub fn load_feature_names_json(path: &str) -> Result<HashMap<u32, String>, Box<std::error::Error>> {
@@ -209,6 +214,31 @@ pub struct RankingDataset {
 }
 
 impl RankingDataset {
+    pub fn compute_feature_subsets(&self, features: &[u32], instances: &[u32]) -> FeatureStats {
+        let mut stats_builders: HashMap<u32, StreamingStats> = features
+            .iter()
+            .cloned()
+            .map(|fid| (fid, StreamingStats::new()))
+            .collect();
+
+        for index in instances.iter().cloned() {
+            self.instances[index as usize].features.update_stats(&mut stats_builders);
+        }
+
+        FeatureStats {
+            feature_stats: stats_builders
+                .into_iter()
+                .flat_map(|(fid, stats)| stats.finish().map(|cs| (fid, cs)))
+                .collect(),
+        }
+    }
+    pub fn label_stats(&self, instances: &[u32]) -> Option<ComputedStats> {
+        let mut label_stats = StreamingStats::new();
+        for index in instances.iter().cloned() {
+            label_stats.push(self.instances[index as usize].perceptron_label() as f64);
+        }
+        label_stats.finish()
+    }
     pub fn compute_feature_stats(&self) -> FeatureStats {
         let mut stats_builders: HashMap<u32, StreamingStats> = self
             .features
