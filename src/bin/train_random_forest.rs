@@ -33,6 +33,7 @@ fn main() -> Result<(), Box<Error>> {
                 .short("n")
                 .takes_value(true),
         )
+        .arg(Arg::with_name("weight_by_perf").long("weight_by_perf"))
         .arg(
             Arg::with_name("split_method")
                 .long("split_method")
@@ -74,10 +75,9 @@ fn main() -> Result<(), Box<Error>> {
     if let Some(num_trees) = matches.value_of("num_trees") {
         params.num_trees = num_trees.parse::<u32>()?;
     }
+    params.weight_trees = matches.is_present("weight_by_perf");
     params.split_method = match matches.value_of("split_method") {
         Some("l2") | None => SplitSelectionStrategy::SquaredError(),
-        Some("mean-diff") => SplitSelectionStrategy::DifferenceInLabelMeans(),
-        Some("min-label-stddev") => SplitSelectionStrategy::MinLabelStddev(),
         Some("gini") => SplitSelectionStrategy::BinaryGiniImpurity(),
         Some("entropy") | Some("information_gain") => SplitSelectionStrategy::InformationGain(),
         Some("variance") => SplitSelectionStrategy::TrueVarianceReduction(),

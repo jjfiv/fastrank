@@ -14,8 +14,6 @@ use std::sync::Arc;
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum SplitSelectionStrategy {
     SquaredError(),
-    DifferenceInLabelMeans(),
-    MinLabelStddev(),
     BinaryGiniImpurity(),
     InformationGain(), // entropy
     TrueVarianceReduction(),
@@ -44,7 +42,7 @@ fn squared_error(ids: &[u32], dataset: &RankingDataset) -> NotNan<f64> {
         .cloned()
         .map(|index| dataset.instances[index as usize].gain)
     {
-        let diff = output - f64::from(cmp::max(NotNan::new(1.0).unwrap(), gain).into_inner());
+        let diff = output - f64::from(gain.into_inner());
         sum_sq_errors += (diff * diff).into_inner();
     }
     NotNan::new(sum_sq_errors).unwrap()
@@ -93,39 +91,25 @@ impl SplitSelectionStrategy {
             SplitSelectionStrategy::SquaredError() => {
                 -(squared_error(lhs, dataset) + squared_error(rhs, dataset))
             }
-            SplitSelectionStrategy::DifferenceInLabelMeans() => {
-                let lhs_stats = dataset.label_stats(lhs).unwrap();
-                let rhs_stats = dataset.label_stats(rhs).unwrap();
-                NotNan::new((lhs_stats.mean() - rhs_stats.mean()).abs()).unwrap()
-            }
-            SplitSelectionStrategy::MinLabelStddev() => {
-                let lhs_stddev = dataset.label_stats(lhs).unwrap().stddev();
-                let rhs_stddev = dataset.label_stats(rhs).unwrap().stddev();
-                // Negative so we minimize the standard deviations.
-                -cmp::min(lhs_stddev, rhs_stddev)
-            }
             SplitSelectionStrategy::BinaryGiniImpurity() => {
-                let total = lhs.len() + rhs.len();
-                let lhs_w = (lhs.len() as f64) / (total as f64);
-                let rhs_w = (rhs.len() as f64) / (total as f64);
+                let lhs_w = lhs.len() as f64;
+                let rhs_w = rhs.len() as f64;
                 let lhs_gini = gini_impurity(lhs, dataset) * lhs_w;
                 let rhs_gini = gini_impurity(rhs, dataset) * rhs_w;
                 // Negative so that we minimize the impurity across the splits.
                 -(lhs_gini + rhs_gini)
             }
             SplitSelectionStrategy::InformationGain() => {
-                let total = lhs.len() + rhs.len();
-                let lhs_w = (lhs.len() as f64) / (total as f64);
-                let rhs_w = (rhs.len() as f64) / (total as f64);
+                let lhs_w = lhs.len() as f64;
+                let rhs_w = rhs.len() as f64;
                 let lhs_e = entropy(lhs, dataset) * lhs_w;
                 let rhs_e = entropy(rhs, dataset) * rhs_w;
                 // Negative so that we minimize the entropy across the splits.
                 -(lhs_e + rhs_e)
             }
             SplitSelectionStrategy::TrueVarianceReduction() => {
-                let total = lhs.len() + rhs.len();
-                let lhs_w = (lhs.len() as f64) / (total as f64);
-                let rhs_w = (rhs.len() as f64) / (total as f64);
+                let lhs_w = lhs.len() as f64;
+                let rhs_w = rhs.len() as f64;
                 let lhs_variance = dataset.label_stats(lhs).unwrap().variance * lhs_w;
                 let rhs_variance = dataset.label_stats(rhs).unwrap().variance * rhs_w;
                 -NotNan::new(lhs_variance + rhs_variance).expect("variance NaN")
@@ -153,7 +137,7 @@ impl Default for RandomForestParams {
         Self {
             weight_trees: false,
             seed: thread_rng().next_u64(),
-            split_method: SplitSelectionStrategy::DifferenceInLabelMeans(),
+            split_method: SplitSelectionStrategy::SquaredError(),
             quiet: false,
             num_trees: 100,
             instance_sampling_rate: 0.5,
