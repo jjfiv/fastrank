@@ -158,6 +158,13 @@ pub struct TrainingInstance {
 }
 
 impl TrainingInstance {
+    pub fn new(gain: NotNan<f32>, qid: String, features: Features) -> Self {
+        Self {
+            gain,
+            qid,
+            features,
+        }
+    }
     pub fn try_new(libsvm: libsvm::Instance) -> Result<TrainingInstance, &'static str> {
         // Convert features to dense representation if it's worthwhile.
         let max_feature = libsvm.features.iter().map(|f| f.idx).max().unwrap_or(1);
@@ -239,7 +246,7 @@ impl RankingDataset {
     pub fn label_stats(&self, instances: &[u32]) -> Option<ComputedStats> {
         let mut label_stats = StreamingStats::new();
         for index in instances.iter().cloned() {
-            label_stats.push(self.instances[index as usize].perceptron_label() as f64);
+            label_stats.push(self.instances[index as usize].gain.into_inner() as f64);
         }
         label_stats.finish()
     }

@@ -5,25 +5,67 @@ use std::cmp::Ordering;
 use std::collections::HashMap;
 use std::sync::Arc;
 
-#[derive(PartialEq, PartialOrd, Eq)]
+#[derive(Debug, Eq)]
 pub struct RankedInstance {
     pub score: NotNan<f64>,
     pub gain: NotNan<f32>,
     pub identifier: u32,
 }
 
+impl PartialEq for RankedInstance {
+    fn eq(&self, other: &RankedInstance) -> bool {
+        self.cmp(&other) == Ordering::Equal
+    }
+}
+
+impl PartialOrd for RankedInstance {
+    fn partial_cmp(&self, other: &RankedInstance) -> Option<Ordering> {
+        Some(self.cmp(&other))
+    }
+}
+
 /// Natural sort: first by socre, descending, then by gain ascending (yielding pessimistic scores on ties), finally by identifier.
 impl Ord for RankedInstance {
     fn cmp(&self, other: &RankedInstance) -> Ordering {
-        let cmp = other.score.cmp(&self.score);
+        // score: asc
+        let cmp = self.score.cmp(&other.score).reverse();
         if cmp != Ordering::Equal {
             return cmp;
         }
+        // gain: desc
         let cmp = self.gain.cmp(&other.gain);
         if cmp != Ordering::Equal {
             return cmp;
         }
+        // identifier: id
         self.identifier.cmp(&other.identifier)
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    fn ri(score: f64, gain: f32, id: u32) -> RankedInstance {
+        RankedInstance::new(NotNan::new(score).unwrap(), NotNan::new(gain).unwrap(), id)
+    }
+    #[test]
+    fn test_rank_ties() {
+        let mut instances = vec![
+            ri(2.0, 0.0, 4),
+            ri(2.0, 1.0, 3),
+            ri(2.0, 2.0, 1),
+            ri(2.0, 2.0, 2),
+            ri(1.0, 2.0, 5),
+        ];
+        // getting: 5,4,3,1,2
+        instances.sort();
+        assert_eq!(
+            vec![3, 1, 2, 4, 5],
+            instances
+                .into_iter()
+                .map(|ri| ri.identifier)
+                .collect::<Vec<_>>()
+        );
     }
 }
 

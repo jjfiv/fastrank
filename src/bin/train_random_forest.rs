@@ -3,6 +3,7 @@ use fastrank::dataset;
 use fastrank::dataset::RankingDataset;
 use fastrank::qrel;
 use fastrank::random_forest::*;
+use ordered_float::NotNan;
 use std::error::Error;
 
 fn main() -> Result<(), Box<Error>> {
@@ -74,7 +75,8 @@ fn main() -> Result<(), Box<Error>> {
         params.num_trees = num_trees.parse::<u32>()?;
     }
     params.split_method = match matches.value_of("split_method") {
-        Some("mean-diff") | None => SplitSelectionStrategy::DifferenceInLabelMeans(),
+        Some("l2") | None => SplitSelectionStrategy::SquaredError(),
+        Some("mean-diff") => SplitSelectionStrategy::DifferenceInLabelMeans(),
         Some("min-label-stddev") => SplitSelectionStrategy::MinLabelStddev(),
         Some("gini") => SplitSelectionStrategy::BinaryGiniImpurity(),
         Some("entropy") | Some("information_gain") => SplitSelectionStrategy::InformationGain(),
