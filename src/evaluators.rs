@@ -27,12 +27,12 @@ impl PartialOrd for RankedInstance {
 /// Natural sort: first by socre, descending, then by gain ascending (yielding pessimistic scores on ties), finally by identifier.
 impl Ord for RankedInstance {
     fn cmp(&self, other: &RankedInstance) -> Ordering {
-        // score: asc
+        // score: desc
         let cmp = self.score.cmp(&other.score).reverse();
         if cmp != Ordering::Equal {
             return cmp;
         }
-        // gain: desc
+        // gain: asc
         let cmp = self.gain.cmp(&other.gain);
         if cmp != Ordering::Equal {
             return cmp;

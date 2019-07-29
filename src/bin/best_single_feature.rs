@@ -98,15 +98,15 @@ fn main() -> Result<(), Box<Error>> {
     let mut models = Vec::new();
 
     if !quiet {
-        println!("--------------------------------------");
+        println!("------------------------------------------");
         println!(
-            "{:3} | {:16} | {:4} | {:.5}",
+            "{:3} | {:16} | {:4} | {:9} |",
             "#",
             "Feature Name",
             "Dir",
             evaluator.name()
         );
-        println!("--------------------------------------");
+        println!("------------------------------------------");
     }
     // explore all features:
     let multiplier = &[-1.0, 1.0];
@@ -128,7 +128,7 @@ fn main() -> Result<(), Box<Error>> {
 
         if !quiet {
             println!(
-                "{:3} | {:16} | {:4.0} | {:2.3}",
+                "{:3} | {:16} | {:4.0} | {:9.3}",
                 fid, feature_name, best_by_dir.item.dir, best_by_dir.score
             );
         }
@@ -136,7 +136,7 @@ fn main() -> Result<(), Box<Error>> {
         models.push(best_by_dir);
     }
     if !quiet {
-        println!("--------------------------------------");
+        println!("------------------------------------------");
     }
 
     models.sort_unstable();
