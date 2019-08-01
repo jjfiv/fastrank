@@ -6,6 +6,7 @@ extern crate serde_derive;
 
 /// Contains code for feature-at-a-time non-differentiable optimization.
 pub mod coordinate_ascent;
+pub mod normalizers;
 pub mod dataset;
 pub mod evaluators;
 pub mod io_helper;

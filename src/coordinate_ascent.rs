@@ -1,5 +1,5 @@
-use crate::dataset::*;
-use crate::evaluators::Evaluator;
+use crate::dataset::{RankingDataset, Features};
+use crate::evaluators::{evaluate_mean, Evaluator};
 use crate::model::{Model, WeightedEnsemble};
 use crate::Scored;
 use ordered_float::NotNan;
@@ -114,7 +114,7 @@ const SIGN: &[i32] = &[0, -1, 1];
 
 fn optimize_inner<R: Rng>(
     restart_id: u32,
-    data: &RankingDataset,
+    data: &dyn RankingDataset,
     evaluator: &Evaluator,
     mut rand: R,
     params: &CoordinateAscentParams,
@@ -123,16 +123,16 @@ fn optimize_inner<R: Rng>(
     let tolerance = NotNan::new(params.tolerance).unwrap();
 
     // Initialize to even weights:
-    let mut model = DenseLinearRankingModel::new(data.n_dim);
-    model.reset(params.init_random, &mut rand, &data.features);
+    let mut model = DenseLinearRankingModel::new(data.n_dim());
+    model.reset(params.init_random, &mut rand, &data.features());
 
     // Initialize this local best (within current restart cycle):
-    let start_score = data.evaluate_mean(&model, evaluator);
+    let start_score = evaluate_mean(data, &model, evaluator);
     let mut current_best = Scored::new(start_score, model.clone());
 
     loop {
         // Get new order of features for this optimization pass.
-        let mut fids: Vec<u32> = data.features.clone();
+        let mut fids: Vec<u32> = data.features().clone();
         fids.shuffle(&mut rand);
 
         if !quiet {
@@ -157,11 +157,7 @@ fn optimize_inner<R: Rng>(
                     model.l1_normalize();
                 }
 
-                let current_feature_name = data
-                    .feature_names
-                    .get(current_feature)
-                    .cloned()
-                    .unwrap_or(format!("{}", current_feature));
+                let current_feature_name = data.feature_name(*current_feature);
                 let current_feature = *current_feature as usize;
 
                 let orig_weight = model.weights[current_feature];
@@ -182,7 +178,7 @@ fn optimize_inner<R: Rng>(
                     for _ in 0..num_iter {
                         let w = orig_weight + total_step;
                         model.weights[current_feature] = w;
-                        let score = data.evaluate_mean(&model, evaluator);
+                        let score = evaluate_mean(data, &model, evaluator);
 
                         if current_best.replace_if_better(score, model.clone()) {
                             if !quiet {
@@ -222,7 +218,7 @@ fn optimize_inner<R: Rng>(
 }
 
 impl CoordinateAscentParams {
-    pub fn learn(&self, data: &RankingDataset, evaluator: &Evaluator) -> Box<Model> {
+    pub fn learn(&self, data: &dyn RankingDataset, evaluator: &Evaluator) -> Box<Model> {
         let mut rand = Xoshiro256StarStar::seed_from_u64(self.seed);
 
         if !self.quiet {

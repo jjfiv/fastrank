@@ -1,9 +1,57 @@
 use crate::dataset::*;
+use crate::model::Model;
 use crate::qrel::QuerySetJudgments;
 use ordered_float::NotNan;
 use std::cmp::Ordering;
 use std::collections::HashMap;
 use std::sync::Arc;
+
+pub fn create_evaluator(
+    dataset: &dyn RankingDataset,
+    orig_name: &str,
+    judgments: Option<QuerySetJudgments>,
+) -> Result<Box<Evaluator>, Box<std::error::Error>> {
+    let (name, depth) = if let Some(at_point) = orig_name.find("@") {
+        let (lhs, rhs) = orig_name.split_at(at_point);
+        let depth = rhs[1..]
+            .parse::<usize>()
+            .map_err(|_| format!("Couldn't parse after the @ in \"{}\": {}", orig_name, rhs))?;
+        (lhs.to_lowercase(), Some(depth))
+    } else {
+        (orig_name.to_lowercase(), None)
+    };
+    Ok(match name.as_str() {
+        "ap" | "map" => Box::new(AveragePrecision::new(dataset, judgments.clone())),
+        "rr" | "mrr" => Box::new(ReciprocalRank),
+        "ndcg" => Box::new(NDCG::new(depth, dataset, judgments.clone())),
+        _ => Err(format!("Invalid training measure: \"{}\"", orig_name))?,
+    })
+}
+
+pub fn evaluate_mean(dataset: &dyn RankingDataset, model: &dyn Model, evaluator: &dyn Evaluator) -> f64 {
+    let mut sum_score = 0.0;
+    let num_scores = dataset.queries().len() as f64;
+    for (qid, docs) in dataset.instances_by_query().iter() {
+        // Predict for every document:
+        let mut ranked_list: Vec<_> = docs
+            .iter()
+            .cloned()
+            .map(|index| {
+                let instance = &dataset.get_instance(index);
+                RankedInstance::new(
+                    model.score(&instance.features),
+                    instance.gain,
+                    index,
+                )
+            })
+            .collect();
+        // Sort largest to smallest:
+        ranked_list.sort_unstable();
+        sum_score += evaluator.score(&qid, &ranked_list);
+    }
+    sum_score / num_scores
+}
+
 
 #[derive(Debug, Eq)]
 pub struct RankedInstance {
@@ -162,12 +210,12 @@ pub struct NDCG {
 impl NDCG {
     pub fn new(
         depth: Option<usize>,
-        dataset: &RankingDataset,
+        dataset: &dyn RankingDataset,
         judgments: Option<QuerySetJudgments>,
     ) -> Self {
-        let mut query_norms = HashMap::new();
+        let mut query_norms: HashMap<String, Option<f64>> = HashMap::new();
 
-        for (qid, instance_ids) in dataset.data_by_query.iter() {
+        for (qid, instance_ids) in dataset.instances_by_query().iter() {
             // Determine the total number of relevant documents:
             let all_gains: Option<Vec<NotNan<f32>>> = judgments
                 .as_ref()
@@ -177,7 +225,7 @@ impl NDCG {
             let ideal_gains: Vec<NotNan<f32>> = all_gains.unwrap_or_else(|| {
                 instance_ids
                     .iter()
-                    .map(|index| dataset.instances[*index].gain)
+                    .map(|index| dataset.get_instance(*index).gain)
                     .collect()
             });
             // Insert ideal if available:
@@ -241,10 +289,10 @@ pub struct AveragePrecision {
 }
 
 impl AveragePrecision {
-    pub fn new(dataset: &RankingDataset, judgments: Option<QuerySetJudgments>) -> Self {
+    pub fn new(dataset: &dyn RankingDataset, judgments: Option<QuerySetJudgments>) -> Self {
         let mut query_norms = HashMap::new();
 
-        for (qid, instance_ids) in dataset.data_by_query.iter() {
+        for (qid, instance_ids) in dataset.instances_by_query().iter() {
             // Determine the total number of relevant documents:
             let param_num_relevant: Option<u32> = judgments
                 .as_ref()
@@ -254,7 +302,7 @@ impl AveragePrecision {
             let num_relevant: u32 = param_num_relevant.unwrap_or_else(|| {
                 instance_ids
                     .iter()
-                    .filter(|index| dataset.instances[**index].is_relevant())
+                    .filter(|index| dataset.get_instance(**index).is_relevant())
                     .count() as u32
             });
 

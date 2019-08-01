@@ -1,5 +1,5 @@
 use crate::dataset::*;
-use crate::evaluators::Evaluator;
+use crate::evaluators::{evaluate_mean, Evaluator};
 use crate::model::{Model, WeightedEnsemble};
 use crate::stats;
 use crate::Scored;
@@ -9,6 +9,7 @@ use rand_xoshiro::rand_core::SeedableRng;
 use rand_xoshiro::Xoshiro256StarStar;
 use rayon::prelude::*;
 use std::cmp;
+use std::collections::HashMap;
 use std::sync::Arc;
 
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -19,7 +20,17 @@ pub enum SplitSelectionStrategy {
     TrueVarianceReduction(),
 }
 
-fn compute_output(ids: &[u32], dataset: &RankingDataset) -> NotNan<f64> {
+pub fn label_stats(
+    instances: &[u32],
+    dataset: &dyn RankingDataset,
+) -> Option<stats::ComputedStats> {
+    let mut label_stats = stats::StreamingStats::new();
+    for index in instances.iter().cloned() {
+        label_stats.push(dataset.get_instance(index).gain.into_inner() as f64);
+    }
+    label_stats.finish()
+}
+fn compute_output(ids: &[u32], dataset: &dyn RankingDataset) -> NotNan<f64> {
     if ids.len() == 0 {
         return NotNan::new(0.0).unwrap();
     }
@@ -27,20 +38,20 @@ fn compute_output(ids: &[u32], dataset: &RankingDataset) -> NotNan<f64> {
     for gain in ids
         .iter()
         .cloned()
-        .map(|index| dataset.instances[index as usize].gain)
+        .map(|index| dataset.get_instance(index).gain)
     {
         gain_sum += gain.into_inner() as f64;
     }
     NotNan::new(gain_sum / (ids.len() as f64)).expect("Leaf output NaN.")
 }
-fn squared_error(ids: &[u32], dataset: &RankingDataset) -> NotNan<f64> {
+fn squared_error(ids: &[u32], dataset: &dyn RankingDataset) -> NotNan<f64> {
     let output = compute_output(ids, dataset);
 
     let mut sum_sq_errors = 0.0;
     for gain in ids
         .iter()
         .cloned()
-        .map(|index| dataset.instances[index as usize].gain)
+        .map(|index| dataset.get_instance(index).gain)
     {
         let diff = output - f64::from(gain.into_inner());
         sum_sq_errors += (diff * diff).into_inner();
@@ -55,7 +66,7 @@ fn gini_impurity(ids: &[u32], dataset: &RankingDataset) -> NotNan<f64> {
     let positive = ids
         .iter()
         .cloned()
-        .filter(|index| dataset.instances[*index as usize].is_relevant())
+        .filter(|index| dataset.get_instance(*index).is_relevant())
         .count();
     let p_yes = (positive as f64) / count;
     let p_no = (count - (positive as f64)) / count;
@@ -77,7 +88,7 @@ fn entropy(ids: &[u32], dataset: &RankingDataset) -> NotNan<f64> {
     let positive = ids
         .iter()
         .cloned()
-        .filter(|index| dataset.instances[*index as usize].is_relevant())
+        .filter(|index| dataset.get_instance(*index).is_relevant())
         .count();
     let p_yes = (positive as f64) / count;
     let p_no = (count - (positive as f64)) / count;
@@ -110,8 +121,8 @@ impl SplitSelectionStrategy {
             SplitSelectionStrategy::TrueVarianceReduction() => {
                 let lhs_w = lhs.len() as f64;
                 let rhs_w = rhs.len() as f64;
-                let lhs_variance = dataset.label_stats(lhs).unwrap().variance * lhs_w;
-                let rhs_variance = dataset.label_stats(rhs).unwrap().variance * rhs_w;
+                let lhs_variance = label_stats(lhs, dataset).unwrap().variance * lhs_w;
+                let rhs_variance = label_stats(rhs, dataset).unwrap().variance * rhs_w;
                 -NotNan::new(lhs_variance + rhs_variance).expect("variance NaN")
             }
         }
@@ -238,7 +249,7 @@ fn generate_split_candidate(
     dataset: &RankingDataset,
     stats: &stats::ComputedStats,
 ) -> Option<FeatureSplitCandidate> {
-    let label_stats = dataset.label_stats(instances)?;
+    let label_stats = label_stats(instances, dataset)?;
     if label_stats.max == label_stats.min {
         return None;
     }
@@ -248,15 +259,7 @@ fn generate_split_candidate(
     let mut instance_feature: Vec<Scored<u32>> = instances
         .iter()
         .cloned()
-        .map(|i| {
-            Scored::new(
-                dataset.instances[i as usize]
-                    .features
-                    .get(fid)
-                    .unwrap_or(0.0),
-                i,
-            )
-        })
+        .map(|i| Scored::new(dataset.get_feature_value(i, fid).unwrap_or(0.0), i))
         .collect();
     instance_feature.sort_unstable();
 
@@ -335,7 +338,7 @@ pub fn learn_ensemble(
 
     trees.par_extend(seeds.into_par_iter().map(|(idx, rand_seed)| {
         let tree = learn_decision_tree(rand_seed, params, dataset);
-        let eval = dataset.evaluate_mean(&tree, evaluator);
+        let eval = evaluate_mean(dataset, &tree, evaluator);
         if !params.quiet {
             println!("|{:>7}|{:>7}|{:>7.3}|", idx + 1, tree.depth(), eval);
         }
@@ -370,21 +373,23 @@ pub fn learn_decision_tree(
     dataset: &RankingDataset,
 ) -> TreeNode {
     let mut rand = Xoshiro256StarStar::seed_from_u64(rand_seed);
+    let features = dataset.features();
+    let instances = dataset.instances();
     let n_features = cmp::max(
         1,
-        ((dataset.features.len() as f64) * params.feature_sampling_rate) as usize,
+        ((features.len() as f64) * params.feature_sampling_rate) as usize,
     );
     let n_instances = cmp::max(
         params.min_leaf_support as usize,
-        ((dataset.instances.len() as f64) * params.instance_sampling_rate) as usize,
+        ((instances.len() as f64) * params.instance_sampling_rate) as usize,
     );
     let step = RecursionParams {
         features: dataset
-            .features
+            .features()
             .choose_multiple(&mut rand, n_features)
             .cloned()
             .collect(),
-        instances: (0..dataset.instances.len())
+        instances: (0..instances.len())
             .map(|i| i as u32)
             .choose_multiple(&mut rand, n_instances),
         current_depth: 1,
@@ -408,6 +413,32 @@ enum NoTreeReason {
     NoFeatureSplitCandidates,
 }
 
+pub fn compute_feature_subsets(
+    dataset: &dyn RankingDataset,
+    features: &[u32],
+    instances: &[u32],
+) -> FeatureStats {
+    let mut stats_builders: HashMap<u32, stats::StreamingStats> = features
+        .iter()
+        .cloned()
+        .map(|fid| (fid, stats::StreamingStats::new()))
+        .collect();
+
+    for index in instances.iter().cloned() {
+        dataset
+            .get_instance(index)
+            .features
+            .update_stats(&mut stats_builders);
+    }
+
+    FeatureStats {
+        feature_stats: stats_builders
+            .into_iter()
+            .flat_map(|(fid, stats)| stats.finish().map(|cs| (fid, cs)))
+            .collect(),
+    }
+}
+
 fn learn_recursive(
     params: &RandomForestParams,
     dataset: &RankingDataset,
@@ -425,9 +456,8 @@ fn learn_recursive(
         return Err(NoTreeReason::SplitTooSmall);
     }
 
-    let feature_stats = dataset
-        .compute_feature_subsets(&step.features, &step.instances)
-        .feature_stats;
+    let feature_stats =
+        compute_feature_subsets(dataset, &step.features, &step.instances).feature_stats;
 
     let mut candidates: Vec<FeatureSplitCandidate> = step
         .features
@@ -489,7 +519,7 @@ mod test {
             .map(|(i, x)| TrainingInstance::new(ys[i], "query".to_string(), single_feature(*x)))
             .collect();
 
-        let dataset = RankingDataset::new(training_instances, None);
+        let dataset = DatasetRef::new(training_instances, None);
         let params = RandomForestParams {
             instance_sampling_rate: 1.0,
             feature_sampling_rate: 1.0,
@@ -502,7 +532,8 @@ mod test {
         };
         let tree = learn_decision_tree(13, &params, &dataset);
 
-        for inst in dataset.instances.iter() {
+        let instances = dataset.instances();
+        for inst in instances.iter() {
             let py = tree.score(&inst.features);
             assert_float_eq(
                 &format!("x={}", inst.features.get(0).unwrap()),

@@ -1,11 +1,12 @@
 use clap::{App, Arg};
 use fastrank::dataset;
-use fastrank::dataset::Normalizer;
-use fastrank::dataset::RankingDataset;
+use fastrank::dataset::{DatasetRef, RankingDataset};
+use fastrank::evaluators::{create_evaluator, evaluate_mean};
 use fastrank::model::Model;
 use fastrank::qrel;
 use fastrank::Scored;
 use ordered_float::NotNan;
+use std::collections::HashSet;
 use std::error::Error;
 
 #[derive(Debug, Clone, Copy)]
@@ -67,30 +68,26 @@ fn main() -> Result<(), Box<Error>> {
         .value_of("FEATURE_NAMES_FILE")
         .map(|path| dataset::load_feature_names_json(path))
         .transpose()?;
-    let mut train_dataset = RankingDataset::load_libsvm(input, feature_names.as_ref())?;
+    let train_dataset = DatasetRef::load_libsvm(input, feature_names.as_ref())?;
 
     // TODO: we open the test dataset up early to quickly get errors, but maybe we want to save the RAM? idk.
     let test_dataset = matches
         .value_of("TEST_FILE")
-        .map(|test_file| RankingDataset::load_libsvm(test_file, feature_names.as_ref()))
+        .map(|test_file| DatasetRef::load_libsvm(test_file, feature_names.as_ref()))
         .transpose()?;
+    // Feature Set to Explore:
+    let mut features: HashSet<u32> = train_dataset.features().iter().cloned().collect();
 
     if let Some(features_to_ignore) = matches.values_of("ignore_features") {
         // Only need to remove it from training.
         for ftr in features_to_ignore {
-            train_dataset.try_remove_feature(ftr)?;
+            let fid = train_dataset.try_lookup_feature(ftr)?;
+            features.remove(&fid);
         }
     }
 
-    let normalizer = matches
-        .value_of("normalize_features")
-        .map(|norm_name| Normalizer::new(norm_name, &train_dataset))
-        .transpose()?;
-    if let Some(norm) = &normalizer {
-        train_dataset.apply_normalization(norm);
-    }
-
-    let evaluator = train_dataset.make_evaluator(
+    let evaluator = create_evaluator(
+        &train_dataset,
         matches.value_of("training_measure").unwrap_or("map"),
         judgments.clone(),
     )?;
@@ -110,7 +107,7 @@ fn main() -> Result<(), Box<Error>> {
     }
     // explore all features:
     let multiplier = &[-1.0, 1.0];
-    let mut features: Vec<u32> = train_dataset.features.iter().cloned().collect();
+    let mut features = features.iter().cloned().collect::<Vec<_>>();
     features.sort_unstable();
     for fid in features {
         let feature_name = feature_names
@@ -122,7 +119,7 @@ fn main() -> Result<(), Box<Error>> {
             .cloned()
             .map(|dir| {
                 let model = SingleFeatureModel { fid, dir };
-                let perf = train_dataset.evaluate_mean(&model, evaluator.as_ref());
+                let perf = evaluate_mean(&train_dataset, &model, evaluator.as_ref());
                 Scored::new(perf, model)
             })
             .max()
@@ -147,25 +144,22 @@ fn main() -> Result<(), Box<Error>> {
     println!("MODEL {:?}", model);
     println!("Training Performance:");
     for measure in &["map", "rr", "ndcg@5", "ndcg"] {
-        let evaluator = train_dataset.make_evaluator(measure, judgments.clone())?;
+        let evaluator = create_evaluator(&train_dataset, measure, judgments.clone())?;
         println!(
             "\t{}: {:.3}",
             evaluator.name(),
-            train_dataset.evaluate_mean(&model, evaluator.as_ref())
+            evaluate_mean(&train_dataset, &model, evaluator.as_ref())
         );
     }
 
-    if let Some(mut test_dataset) = test_dataset {
-        if let Some(norm) = &normalizer {
-            test_dataset.apply_normalization(&norm);
-        }
+    if let Some(test_dataset) = test_dataset {
         println!("Test Performance:");
         for measure in &["map", "rr", "ndcg@5", "ndcg"] {
-            let evaluator = test_dataset.make_evaluator(measure, judgments.clone())?;
+            let evaluator = create_evaluator(&test_dataset, measure, judgments.clone())?;
             println!(
                 "\t{}: {:.3}",
                 evaluator.name(),
-                test_dataset.evaluate_mean(&model, evaluator.as_ref())
+                evaluate_mean(&test_dataset, &model, evaluator.as_ref())
             );
         }
     }

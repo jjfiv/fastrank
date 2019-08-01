@@ -1,99 +1,17 @@
-use crate::evaluators::*;
 use crate::io_helper;
 use crate::libsvm;
-use crate::model::Model;
-use crate::qrel::QuerySetJudgments;
+use crate::normalizers::Normalizer;
 use crate::stats::{ComputedStats, StreamingStats};
 use ordered_float::NotNan;
 use std::collections::HashMap;
 use std::collections::HashSet;
+use std::error::Error;
 use std::f64;
+use std::sync::Arc;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FeatureStats {
     pub feature_stats: HashMap<u32, ComputedStats>,
-}
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub enum Normalizer {
-    MaxMinNormalizer(FeatureStats),
-    ZScoreNormalizer(FeatureStats),
-    SigmoidNormalizer(),
-}
-
-impl Normalizer {
-    pub fn new(method: &str, dataset: &RankingDataset) -> Result<Normalizer, String> {
-        Ok(match method {
-            "zscore" => Normalizer::ZScoreNormalizer(dataset.compute_feature_stats()),
-            "maxmin" | "linear" => Normalizer::MaxMinNormalizer(dataset.compute_feature_stats()),
-            "sigmoid" => Normalizer::SigmoidNormalizer(),
-            unkn => Err(format!("Unsupported Normalizer: {}", unkn))?,
-        })
-    }
-    fn normalize(&self, fid: u32, val: f32) -> f32 {
-        match self {
-            Normalizer::MaxMinNormalizer(fs) => {
-                if let Some(stats) = fs.feature_stats.get(&fid) {
-                    let max = stats.max as f32;
-                    let min = stats.min as f32;
-                    if max == min {
-                        return 0.0;
-                    }
-                    match NotNan::new((val - min) / (max - min)) {
-                        Ok(out) => return out.into_inner(),
-                        Err(_) => panic!(
-                            "Normalization.maxmin NaN: {} {} {:?}",
-                            val,
-                            max - min,
-                            stats
-                        ),
-                    }
-                }
-            }
-            Normalizer::ZScoreNormalizer(fs) => {
-                if let Some(stats) = fs.feature_stats.get(&fid) {
-                    let mean = stats.mean as f32;
-                    let stddev = stats.variance.sqrt() as f32;
-                    if stddev == 0.0 {
-                        return 0.0;
-                    }
-                    match NotNan::new((val - mean) / stddev) {
-                        Ok(out) => return out.into_inner(),
-                        Err(_) => panic!(
-                            "Normalization.zscore NaN: {} {} {} {:?}",
-                            stats.mean,
-                            stats.variance,
-                            stats.variance.sqrt(),
-                            stats
-                        ),
-                    };
-                }
-            }
-            Normalizer::SigmoidNormalizer() => match NotNan::new(sigmoid(val)) {
-                Ok(out) => return out.into_inner() as f32,
-                Err(_) => panic!(
-                    "Normalization.sigmoid NaN: {} {} {} {} {}",
-                    val,
-                    val.exp(),
-                    -(val).exp(),
-                    sigmoid(val),
-                    fid
-                ),
-            },
-        }
-        // if no stats or match, original value.
-        val
-    }
-}
-
-/// [Numerically stable sigmoid](https://timvieira.github.io/blog/post/2014/02/11/exp-normalize-trick/)
-fn sigmoid(x: f32) -> f32 {
-    if x > 0.0 {
-        let z = (-x).exp();
-        1.0 / (1.0 + z)
-    } else {
-        let z = x.exp();
-        z / (1.0 + z)
-    }
 }
 
 pub enum Features {
@@ -213,66 +131,133 @@ pub fn load_feature_names_json(path: &str) -> Result<HashMap<u32, String>, Box<s
     Ok(data?)
 }
 
-pub struct RankingDataset {
+pub trait RankingDataset: Send + Sync {
+    fn features(&self) -> Vec<u32>;
+    fn n_dim(&self) -> u32;
+    fn instances(&self) -> Vec<&TrainingInstance>;
+    fn get_instance(&self, id: u32) -> &TrainingInstance;
+    fn instances_by_query(&self) -> HashMap<String, Vec<u32>>;
+    fn queries(&self) -> Vec<String>;
+    /// For printing, the name if available or the number.
+    fn feature_name(&self, fid: u32) -> String;
+    /// Lookup a feature value for a particular instance.
+    fn get_feature_value(&self, instance: u32, fid: u32) -> Option<f64>;
+    // Given a name or number as a string, lookup the feature id:
+    fn try_lookup_feature(&self, name_or_num: &str) -> Result<u32, Box<Error>>;
+}
+
+/// This is an Arc wrapper around a LoadedRankingDataset, for cheaper copies.
+#[derive(Clone)]
+pub struct DatasetRef {
+    pub data: Arc<LoadedRankingDataset>,
+}
+/// Just proxy these requests to the inner (expensive-copy) implementation.
+impl RankingDataset for DatasetRef {
+    fn features(&self) -> Vec<u32> {
+        self.data.features()
+    }
+    fn n_dim(&self) -> u32 {
+        self.data.n_dim()
+    }
+    fn instances(&self) -> Vec<&TrainingInstance> {
+        self.data.instances()
+    }
+    fn get_instance(&self, id: u32) -> &TrainingInstance {
+        self.data.get_instance(id)
+    }
+    fn instances_by_query(&self) -> HashMap<String, Vec<u32>> {
+        self.data.instances_by_query()
+    }
+    fn queries(&self) -> Vec<String> {
+        self.data.queries()
+    }
+    fn feature_name(&self, fid: u32) -> String {
+        self.data.feature_name(fid)
+    }
+    fn get_feature_value(&self, instance: u32, fid: u32) -> Option<f64> {
+        self.data.get_feature_value(instance, fid)
+    }
+    fn try_lookup_feature(&self, name_or_num: &str) -> Result<u32, Box<Error>> {
+        self.data.try_lookup_feature(name_or_num)
+    }
+}
+
+impl DatasetRef {
+    pub fn load_libsvm(
+        path: &str,
+        feature_names: Option<&HashMap<u32, String>>,
+    ) -> Result<DatasetRef, Box<std::error::Error>> {
+        Ok(DatasetRef {
+            data: Arc::new(LoadedRankingDataset::load_libsvm(path, feature_names)?),
+        })
+    }
+    pub fn new(data: Vec<TrainingInstance>, feature_names: Option<&HashMap<u32, String>>) -> Self {
+        DatasetRef {
+            data: Arc::new(LoadedRankingDataset::new(data, feature_names)),
+        }
+    }
+}
+
+pub struct LoadedRankingDataset {
     pub instances: Vec<TrainingInstance>,
     pub features: Vec<u32>,
     pub n_dim: u32,
     pub normalization: Option<Normalizer>,
-    pub data_by_query: HashMap<String, Vec<usize>>,
+    pub data_by_query: HashMap<String, Vec<u32>>,
     pub feature_names: HashMap<u32, String>,
 }
 
-impl RankingDataset {
-    pub fn compute_feature_subsets(&self, features: &[u32], instances: &[u32]) -> FeatureStats {
-        let mut stats_builders: HashMap<u32, StreamingStats> = features
+impl LoadedRankingDataset {
+    pub fn into_ref(self) -> DatasetRef {
+        DatasetRef {
+            data: Arc::new(self),
+        }
+    }
+    pub fn load_libsvm(
+        path: &str,
+        feature_names: Option<&HashMap<u32, String>>,
+    ) -> Result<LoadedRankingDataset, Box<std::error::Error>> {
+        let reader = io_helper::open_reader(path)?;
+        let mut instances = Vec::new();
+        for inst in libsvm::instances(reader) {
+            let inst = TrainingInstance::try_new(inst?)?;
+            instances.push(inst);
+        }
+        Ok(Self::new(instances, feature_names))
+    }
+    pub fn new(data: Vec<TrainingInstance>, feature_names: Option<&HashMap<u32, String>>) -> Self {
+        // Collect features that are actually present.
+        let mut features: HashSet<u32> = HashSet::new();
+        // Collect training instances by the query.
+        let mut data_by_query: HashMap<String, Vec<u32>> = HashMap::new();
+        for (i, inst) in data.iter().enumerate() {
+            data_by_query
+                .entry(inst.qid.clone())
+                .or_insert(Vec::new())
+                .push(i as u32);
+            features.extend(inst.features.ids());
+        }
+        // Get a sorted list of active features in this dataset.
+        let mut features: Vec<u32> = features.iter().cloned().collect();
+        features.sort_unstable();
+
+        // Calculate the number of features, including any missing ones, so we can have a dense linear model.
+        let n_dim = features
             .iter()
             .cloned()
-            .map(|fid| (fid, StreamingStats::new()))
-            .collect();
+            .max()
+            .expect("No features defined!")
+            + 1;
 
-        for index in instances.iter().cloned() {
-            self.instances[index as usize]
-                .features
-                .update_stats(&mut stats_builders);
-        }
-
-        FeatureStats {
-            feature_stats: stats_builders
-                .into_iter()
-                .flat_map(|(fid, stats)| stats.finish().map(|cs| (fid, cs)))
-                .collect(),
+        LoadedRankingDataset {
+            instances: data,
+            features,
+            n_dim,
+            normalization: None,
+            data_by_query,
+            feature_names: feature_names.cloned().unwrap_or(HashMap::new()),
         }
     }
-    pub fn label_stats(&self, instances: &[u32]) -> Option<ComputedStats> {
-        let mut label_stats = StreamingStats::new();
-        for index in instances.iter().cloned() {
-            label_stats.push(self.instances[index as usize].gain.into_inner() as f64);
-        }
-        label_stats.finish()
-    }
-    pub fn compute_feature_stats(&self) -> FeatureStats {
-        let mut stats_builders: HashMap<u32, StreamingStats> = self
-            .features
-            .iter()
-            .cloned()
-            .map(|fid| (fid, StreamingStats::new()))
-            .collect();
-        for inst in self.instances.iter() {
-            inst.features.update_stats(&mut stats_builders);
-        }
-
-        for (fid, stats) in stats_builders.iter() {
-            println!("fid={}\t{:?}", fid, stats);
-        }
-
-        FeatureStats {
-            feature_stats: stats_builders
-                .into_iter()
-                .flat_map(|(fid, stats)| stats.finish().map(|cs| (fid, cs)))
-                .collect(),
-        }
-    }
-
     pub fn apply_normalization(&mut self, normalizer: &Normalizer) {
         if self.normalization.is_some() {
             panic!("Cannot apply normalization twice!");
@@ -317,96 +302,69 @@ impl RankingDataset {
             ))?;
         }
     }
+}
 
-    pub fn make_evaluator(
-        &self,
-        orig_name: &str,
-        judgments: Option<QuerySetJudgments>,
-    ) -> Result<Box<Evaluator>, Box<std::error::Error>> {
-        let (name, depth) = if let Some(at_point) = orig_name.find("@") {
-            let (lhs, rhs) = orig_name.split_at(at_point);
-            let depth = rhs[1..]
-                .parse::<usize>()
-                .map_err(|_| format!("Couldn't parse after the @ in \"{}\": {}", orig_name, rhs))?;
-            (lhs.to_lowercase(), Some(depth))
-        } else {
-            (orig_name.to_lowercase(), None)
-        };
-        Ok(match name.as_str() {
-            "ap" | "map" => Box::new(AveragePrecision::new(&self, judgments.clone())),
-            "rr" | "mrr" => Box::new(ReciprocalRank),
-            "ndcg" => Box::new(NDCG::new(depth, &self, judgments.clone())),
-            _ => Err(format!("Invalid training measure: \"{}\"", orig_name))?,
-        })
+impl RankingDataset for LoadedRankingDataset {
+    fn features(&self) -> Vec<u32> {
+        self.features.clone()
     }
-
-    pub fn evaluate_mean(&self, model: &Model, evaluator: &Evaluator) -> f64 {
-        let mut sum_score = 0.0;
-        let num_scores = self.data_by_query.len() as f64;
-        for (qid, docs) in self.data_by_query.iter() {
-            // Predict for every document:
-            let mut ranked_list: Vec<_> = docs
-                .iter()
-                .cloned()
-                .map(|index| {
-                    RankedInstance::new(
-                        model.score(&self.instances[index].features),
-                        self.instances[index].gain,
-                        index as u32,
-                    )
-                })
-                .collect();
-            // Sort largest to smallest:
-            ranked_list.sort_unstable();
-            sum_score += evaluator.score(&qid, &ranked_list);
-        }
-        sum_score / num_scores
+    fn n_dim(&self) -> u32 {
+        self.n_dim
     }
-
-    pub fn load_libsvm(
-        path: &str,
-        feature_names: Option<&HashMap<u32, String>>,
-    ) -> Result<Self, Box<std::error::Error>> {
-        let reader = io_helper::open_reader(path)?;
-        let mut instances = Vec::new();
-        for inst in libsvm::instances(reader) {
-            let inst = TrainingInstance::try_new(inst?)?;
-            instances.push(inst);
-        }
-        Ok(Self::new(instances, feature_names))
+    fn instances(&self) -> Vec<&TrainingInstance> {
+        self.instances.iter().collect()
     }
-
-    pub fn new(data: Vec<TrainingInstance>, feature_names: Option<&HashMap<u32, String>>) -> Self {
-        // Collect features that are actually present.
-        let mut features: HashSet<u32> = HashSet::new();
-        // Collect training instances by the query.
-        let mut data_by_query: HashMap<String, Vec<usize>> = HashMap::new();
-        for (i, inst) in data.iter().enumerate() {
-            data_by_query
-                .entry(inst.qid.clone())
-                .or_insert(Vec::new())
-                .push(i);
-            features.extend(inst.features.ids());
-        }
-        // Get a sorted list of active features in this dataset.
-        let mut features: Vec<u32> = features.iter().cloned().collect();
-        features.sort_unstable();
-
-        // Calculate the number of features, including any missing ones, so we can have a dense linear model.
-        let n_dim = features
+    fn get_instance(&self, id: u32) -> &TrainingInstance {
+        &self.instances[id as usize]
+    }
+    fn instances_by_query(&self) -> HashMap<String, Vec<u32>> {
+        self.data_by_query.clone()
+    }
+    fn queries(&self) -> Vec<String> {
+        self.data_by_query
             .iter()
+            .map(|(k, _v)| k)
             .cloned()
-            .max()
-            .expect("No features defined!")
-            + 1;
+            .collect()
+    }
+    fn feature_name(&self, fid: u32) -> String {
+        self.feature_names
+            .get(&fid)
+            .cloned()
+            .unwrap_or(format!("{}", fid))
+    }
+    fn get_feature_value(&self, instance: u32, fid: u32) -> Option<f64> {
+        self.instances[instance as usize].features.get(fid)
+    }
+    fn try_lookup_feature(&self, name_or_num: &str) -> Result<u32, Box<Error>> {
+        if let Some((num, _)) = self
+            .feature_names
+            .iter()
+            .find(|(_, v)| v.as_str() == name_or_num)
+        {
+            if let Some(idx) = self.features.iter().position(|n| n == num) {
+                return Ok(idx as u32);
+            } else {
+                return Err(format!(
+                    "Named feature not present in actual dataset! {}",
+                    name_or_num
+                ))?;
+            }
+        }
 
-        Self {
-            instances: data,
-            features,
-            n_dim,
-            normalization: None,
-            data_by_query,
-            feature_names: feature_names.cloned().unwrap_or(HashMap::new()),
+        let num = name_or_num.parse::<u32>().map_err(|_| {
+            format!(
+                "Could not turn {} into a name or number in this dataset.",
+                name_or_num
+            )
+        })?;
+        if let Some(idx) = self.features.iter().position(|n| *n == num) {
+            return Ok(idx as u32);
+        } else {
+            return Err(format!(
+                "Feature #{} not present in actual dataset!",
+                name_or_num
+            ))?;
         }
     }
 }
