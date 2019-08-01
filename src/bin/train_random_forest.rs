@@ -3,7 +3,6 @@ use fastrank::dataset;
 use fastrank::dataset::RankingDataset;
 use fastrank::qrel;
 use fastrank::random_forest::*;
-use ordered_float::NotNan;
 use std::error::Error;
 
 fn main() -> Result<(), Box<Error>> {

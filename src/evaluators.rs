@@ -60,7 +60,7 @@ mod test {
         // getting: 5,4,3,1,2
         instances.sort();
         assert_eq!(
-            vec![3, 1, 2, 4, 5],
+            vec![4, 3, 1, 2, 5],
             instances
                 .into_iter()
                 .map(|ri| ri.identifier)
