@@ -532,8 +532,8 @@ mod test {
         };
         let tree = learn_decision_tree(13, &params, &dataset);
 
-        let instances = dataset.instances();
-        for inst in instances.iter() {
+        for inst in dataset.instances() {
+            let inst = dataset.get_instance(inst);
             let py = tree.score(&inst.features);
             assert_float_eq(
                 &format!("x={}", inst.features.get(0).unwrap()),

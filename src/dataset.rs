@@ -3,6 +3,8 @@ use crate::libsvm;
 use crate::normalizers::Normalizer;
 use crate::stats::{ComputedStats, StreamingStats};
 use ordered_float::NotNan;
+use rand::prelude::*;
+use std::cmp;
 use std::collections::HashMap;
 use std::collections::HashSet;
 use std::error::Error;
@@ -131,10 +133,42 @@ pub fn load_feature_names_json(path: &str) -> Result<HashMap<u32, String>, Box<s
     Ok(data?)
 }
 
+pub trait DatasetSampling {
+    /// Sample this dataset randomly to frate percent of features and srate percent of instances.
+    /// At least one feature and one instance is selected no matter how small the percentage.
+    fn random_sample<R: Rng>(&self, frate: f64, srate: f64, rand: &mut R) -> SampledDatasetRef;
+}
+
+impl DatasetSampling for RankingDataset {
+    fn random_sample<R: Rng>(&self, frate: f64, srate: f64, rand: &mut R) -> SampledDatasetRef {
+        let features = self.features();
+        let instances = self.instances();
+
+        let n_features = cmp::max(1, ((features.len() as f64) * frate) as usize);
+        let n_instances = cmp::max(1, ((instances.len() as f64) * srate) as usize);
+
+        let features = features
+            .choose_multiple(rand, n_features)
+            .cloned()
+            .collect();
+        let instances = instances
+            .choose_multiple(rand, n_instances)
+            .cloned()
+            .collect();
+
+        SampledDatasetRef {
+            parent: self.get_ref(),
+            features,
+            instances,
+        }
+    }
+}
+
 pub trait RankingDataset: Send + Sync {
+    fn get_ref(&self) -> DatasetRef;
     fn features(&self) -> Vec<u32>;
     fn n_dim(&self) -> u32;
-    fn instances(&self) -> Vec<&TrainingInstance>;
+    fn instances(&self) -> Vec<u32>;
     fn get_instance(&self, id: u32) -> &TrainingInstance;
     fn instances_by_query(&self) -> HashMap<String, Vec<u32>>;
     fn queries(&self) -> Vec<String>;
@@ -153,13 +187,16 @@ pub struct DatasetRef {
 }
 /// Just proxy these requests to the inner (expensive-copy) implementation.
 impl RankingDataset for DatasetRef {
+    fn get_ref(&self) -> DatasetRef {
+        self.clone()
+    }
     fn features(&self) -> Vec<u32> {
         self.data.features()
     }
     fn n_dim(&self) -> u32 {
         self.data.n_dim()
     }
-    fn instances(&self) -> Vec<&TrainingInstance> {
+    fn instances(&self) -> Vec<u32> {
         self.data.instances()
     }
     fn get_instance(&self, id: u32) -> &TrainingInstance {
@@ -179,6 +216,64 @@ impl RankingDataset for DatasetRef {
     }
     fn try_lookup_feature(&self, name_or_num: &str) -> Result<u32, Box<Error>> {
         self.data.try_lookup_feature(name_or_num)
+    }
+}
+
+#[derive(Clone)]
+pub struct SampledDatasetRef {
+    pub parent: DatasetRef,
+    pub features: Vec<u32>,
+    pub instances: Vec<u32>,
+}
+
+impl RankingDataset for SampledDatasetRef {
+    fn get_ref(&self) -> DatasetRef {
+        self.parent.clone()
+    }
+    fn features(&self) -> Vec<u32> {
+        self.features.clone()
+    }
+    fn n_dim(&self) -> u32 {
+        self.features.len() as u32
+    }
+    fn instances(&self) -> Vec<u32> {
+        self.instances.clone()
+    }
+    fn get_instance(&self, id: u32) -> &TrainingInstance {
+        self.parent.get_instance(id)
+    }
+    fn instances_by_query(&self) -> HashMap<String, Vec<u32>> {
+        let mut out = HashMap::new();
+        for id in self.instances.iter().cloned() {
+            out.entry(self.parent.get_instance(id).qid.to_owned())
+                .or_insert(Vec::new())
+                .push(id);
+        }
+        out
+    }
+    fn queries(&self) -> Vec<String> {
+        let mut out: HashSet<&str> = HashSet::new();
+        for id in self.instances.iter().cloned() {
+            out.insert(&self.parent.get_instance(id).qid);
+        }
+        out.iter().map(|s| s.to_string()).collect()
+    }
+    fn feature_name(&self, fid: u32) -> String {
+        self.parent.feature_name(fid)
+    }
+    fn get_feature_value(&self, instance: u32, fid: u32) -> Option<f64> {
+        self.parent.get_feature_value(instance, fid)
+    }
+    fn try_lookup_feature(&self, name_or_num: &str) -> Result<u32, Box<Error>> {
+        let fid = self.parent.try_lookup_feature(name_or_num)?;
+        if self.features.contains(&fid) {
+            return Ok(fid);
+        } else {
+            Err(format!(
+                "Feature not in subsample: {}: {}",
+                name_or_num, fid
+            ))?
+        }
     }
 }
 
@@ -305,14 +400,17 @@ impl LoadedRankingDataset {
 }
 
 impl RankingDataset for LoadedRankingDataset {
+    fn get_ref(&self) -> DatasetRef {
+        panic!("This is too expensive!")
+    }
     fn features(&self) -> Vec<u32> {
         self.features.clone()
     }
     fn n_dim(&self) -> u32 {
         self.n_dim
     }
-    fn instances(&self) -> Vec<&TrainingInstance> {
-        self.instances.iter().collect()
+    fn instances(&self) -> Vec<u32> {
+        (0..self.instances.len()).map(|i| i as u32).collect()
     }
     fn get_instance(&self, id: u32) -> &TrainingInstance {
         &self.instances[id as usize]

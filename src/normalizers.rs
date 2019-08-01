@@ -11,8 +11,8 @@ fn compute_feature_stats(dataset: &dyn RankingDataset) -> FeatureStats {
         .map(|fid| (fid, StreamingStats::new()))
         .collect();
 
-    for inst in dataset.instances().iter() {
-        inst.features.update_stats(&mut stats_builders);
+    for inst in dataset.instances().iter().cloned() {
+        dataset.get_instance(inst).features.update_stats(&mut stats_builders);
     }
 
     FeatureStats {
