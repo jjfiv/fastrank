@@ -1,57 +1,14 @@
 use crate::dataset::*;
 use crate::model::Model;
 use crate::qrel::QuerySetJudgments;
+use crate::stats::PercentileStats;
 use ordered_float::NotNan;
+use rand::prelude::*;
 use std::cmp::Ordering;
 use std::collections::HashMap;
 use std::sync::Arc;
 
-pub fn create_evaluator(
-    dataset: &dyn RankingDataset,
-    orig_name: &str,
-    judgments: Option<QuerySetJudgments>,
-) -> Result<Box<Evaluator>, Box<std::error::Error>> {
-    let (name, depth) = if let Some(at_point) = orig_name.find("@") {
-        let (lhs, rhs) = orig_name.split_at(at_point);
-        let depth = rhs[1..]
-            .parse::<usize>()
-            .map_err(|_| format!("Couldn't parse after the @ in \"{}\": {}", orig_name, rhs))?;
-        (lhs.to_lowercase(), Some(depth))
-    } else {
-        (orig_name.to_lowercase(), None)
-    };
-    Ok(match name.as_str() {
-        "ap" | "map" => Box::new(AveragePrecision::new(dataset, judgments.clone())),
-        "rr" | "mrr" => Box::new(ReciprocalRank),
-        "ndcg" => Box::new(NDCG::new(depth, dataset, judgments.clone())),
-        _ => Err(format!("Invalid training measure: \"{}\"", orig_name))?,
-    })
-}
-
-pub fn evaluate_mean(dataset: &dyn RankingDataset, model: &dyn Model, evaluator: &dyn Evaluator) -> f64 {
-    let mut sum_score = 0.0;
-    let num_scores = dataset.queries().len() as f64;
-    for (qid, docs) in dataset.instances_by_query().iter() {
-        // Predict for every document:
-        let mut ranked_list: Vec<_> = docs
-            .iter()
-            .cloned()
-            .map(|index| {
-                let instance = &dataset.get_instance(index);
-                RankedInstance::new(
-                    model.score(&instance.features),
-                    instance.gain,
-                    index,
-                )
-            })
-            .collect();
-        // Sort largest to smallest:
-        ranked_list.sort_unstable();
-        sum_score += evaluator.score(&qid, &ranked_list);
-    }
-    sum_score / num_scores
-}
-
+const NUM_BOOTSTRAP_SAMPLES: u32 = 200;
 
 #[derive(Debug, Eq)]
 pub struct RankedInstance {
@@ -127,6 +84,117 @@ impl RankedInstance {
     }
     pub fn is_relevant(&self) -> bool {
         self.gain.into_inner() > 0.0
+    }
+}
+
+#[derive(Clone)]
+pub struct SetEvaluator {
+    dataset: DatasetRef,
+    evaluator: Arc<Evaluator>,
+}
+
+impl SetEvaluator {
+    pub fn name(&self) -> String {
+        self.evaluator.name()
+    }
+
+    pub fn print_standard_eval(
+        split_name: &str,
+        model: &Model,
+        dataset: &RankingDataset,
+        judgments: &Option<QuerySetJudgments>,
+    ) {
+        println!("{} Performance:", split_name);
+        for measure in &["map", "rr", "ndcg@5", "ndcg"] {
+            let evaluator = SetEvaluator::create(dataset, measure, judgments.clone())
+                .expect("print_standard_eval should only have valid measures!");
+            let (p5, p25, p50, p75, p95) = evaluator
+                .bootstrap_eval(NUM_BOOTSTRAP_SAMPLES, model)
+                .summary();
+            println!(
+                "\t{}: Mean={:.3} Percentiles=({:.3} {:.3} {:.3} {:.3} {:.3})",
+                evaluator.name(),
+                evaluator.evaluate_mean(model),
+                p5,
+                p25,
+                p50,
+                p75,
+                p95
+            );
+        }
+    }
+
+    pub fn create(
+        dataset: &dyn RankingDataset,
+        orig_name: &str,
+        judgments: Option<QuerySetJudgments>,
+    ) -> Result<SetEvaluator, Box<std::error::Error>> {
+        let (name, depth) = if let Some(at_point) = orig_name.find("@") {
+            let (lhs, rhs) = orig_name.split_at(at_point);
+            let depth = rhs[1..]
+                .parse::<usize>()
+                .map_err(|_| format!("Couldn't parse after the @ in \"{}\": {}", orig_name, rhs))?;
+            (lhs.to_lowercase(), Some(depth))
+        } else {
+            (orig_name.to_lowercase(), None)
+        };
+        Ok(SetEvaluator {
+            dataset: dataset.get_ref(),
+            evaluator: match name.as_str() {
+                "ap" | "map" => Arc::new(AveragePrecision::new(dataset, judgments.clone())),
+                "rr" | "mrr" => Arc::new(ReciprocalRank),
+                "ndcg" => Arc::new(NDCG::new(depth, dataset, judgments.clone())),
+                _ => Err(format!("Invalid training measure: \"{}\"", orig_name))?,
+            },
+        })
+    }
+
+    pub fn bootstrap_eval(&self, num_trials: u32, model: &dyn Model) -> PercentileStats {
+        let data = self.evaluate_to_vec(model);
+        let n = data.len();
+        let mut means = Vec::new();
+        let mut rng = thread_rng();
+        for _ in 0..num_trials {
+            let mut sum = 0.0;
+            for _ in 0..n {
+                let index: usize = rng.gen_range(0, n);
+                sum += data[index];
+            }
+            means.push(sum / (n as f64))
+        }
+        PercentileStats::new(&means)
+    }
+
+    pub fn evaluate_mean(&self, model: &dyn Model) -> f64 {
+        let scores = self.evaluate_to_vec(model);
+        if scores.len() == 0 {
+            return 0.0;
+        }
+        let n = scores.len() as f64;
+        let mut sum = 0.0;
+        for s in scores {
+            sum += s;
+        }
+        return sum / n;
+    }
+
+    fn evaluate_to_vec(&self, model: &dyn Model) -> Vec<f64> {
+        let mut scores = Vec::new();
+        for (qid, docs) in self.dataset.instances_by_query().iter() {
+            // Predict for every document:
+            let mut ranked_list: Vec<_> = docs
+                .iter()
+                .cloned()
+                .map(|index| {
+                    let instance = &self.dataset.get_instance(index);
+                    RankedInstance::new(model.score(&instance.features), instance.gain, index)
+                })
+                .collect();
+            // Sort largest to smallest:
+            ranked_list.sort_unstable();
+            scores.push(self.evaluator.score(&qid, &ranked_list));
+        }
+        scores
     }
 }
 

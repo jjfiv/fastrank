@@ -1,6 +1,6 @@
 use clap::{App, Arg};
 use fastrank::dataset;
-use fastrank::evaluators::{evaluate_mean, create_evaluator};
+use fastrank::evaluators::SetEvaluator;
 use fastrank::qrel;
 use fastrank::random_forest::*;
 use std::error::Error;
@@ -112,12 +112,15 @@ fn main() -> Result<(), Box<Error>> {
         .value_of("FEATURE_NAMES_FILE")
         .map(|path| dataset::load_feature_names_json(path))
         .transpose()?;
-    let mut train_dataset = dataset::LoadedRankingDataset::load_libsvm(input, feature_names.as_ref())?;
+    let mut train_dataset =
+        dataset::LoadedRankingDataset::load_libsvm(input, feature_names.as_ref())?;
 
     // TODO: we open the test dataset up early to quickly get errors, but maybe we want to save the RAM? idk.
     let test_dataset = matches
         .value_of("TEST_FILE")
-        .map(|test_file| dataset::LoadedRankingDataset::load_libsvm(test_file, feature_names.as_ref()))
+        .map(|test_file| {
+            dataset::LoadedRankingDataset::load_libsvm(test_file, feature_names.as_ref())
+        })
         .transpose()?;
 
     if let Some(features_to_ignore) = matches.values_of("ignore_features") {
@@ -130,32 +133,18 @@ fn main() -> Result<(), Box<Error>> {
     let train_dataset = train_dataset.into_ref();
     let test_dataset = test_dataset.map(|td| td.into_ref());
 
-    let evaluator = create_evaluator(&train_dataset,
+    let evaluator = SetEvaluator::create(
+        &train_dataset,
         matches.value_of("training_measure").unwrap_or("map"),
         judgments.clone(),
     )?;
-    let model = Box::new(learn_ensemble(&params, &train_dataset, evaluator.as_ref()));
+    let model = Box::new(learn_ensemble(&params, &train_dataset, &evaluator));
     //println!("MODEL {:?}", model);
-    println!("Training Performance:");
-    for measure in &["map", "rr", "ndcg@5", "ndcg"] {
-        let evaluator = create_evaluator(&train_dataset, measure, judgments.clone())?;
-        println!(
-            "\t{}: {:.3}",
-            evaluator.name(),
-            evaluate_mean(&train_dataset, model.as_ref(), evaluator.as_ref())
-        );
-    }
 
+    // Print train and test evaluations:
+    SetEvaluator::print_standard_eval("Train", model.as_ref(), &train_dataset, &judgments);
     if let Some(test_dataset) = test_dataset {
-        println!("Test Performance:");
-        for measure in &["map", "rr", "ndcg@5", "ndcg"] {
-            let evaluator = create_evaluator(&test_dataset, measure, judgments.clone())?;
-            println!(
-                "\t{}: {:.3}",
-                evaluator.name(),
-                evaluate_mean(&test_dataset, model.as_ref(), evaluator.as_ref())
-            );
-        }
+        SetEvaluator::print_standard_eval("Test", model.as_ref(), &test_dataset, &judgments);
     }
 
     Ok(())

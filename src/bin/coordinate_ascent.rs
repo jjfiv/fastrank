@@ -1,9 +1,9 @@
 use clap::{App, Arg};
 use fastrank::coordinate_ascent::*;
 use fastrank::dataset;
-use fastrank::normalizers::Normalizer;
-use fastrank::evaluators::{create_evaluator, evaluate_mean};
 use fastrank::dataset::LoadedRankingDataset;
+use fastrank::evaluators::SetEvaluator;
+use fastrank::normalizers::Normalizer;
 use fastrank::qrel;
 use std::error::Error;
 
@@ -121,32 +121,18 @@ fn main() -> Result<(), Box<Error>> {
     let train_dataset = train_dataset.into_ref();
     let test_dataset = test_dataset.map(|td| td.into_ref());
 
-    let evaluator = create_evaluator(&train_dataset,
+    let evaluator = SetEvaluator::create(
+        &train_dataset,
         matches.value_of("training_measure").unwrap_or("map"),
         judgments.clone(),
     )?;
-    let model = params.learn(&train_dataset, evaluator.as_ref());
+    let model = params.learn(&train_dataset, &evaluator);
     println!("MODEL {:?}", model);
-    println!("Training Performance:");
-    for measure in &["map", "rr", "ndcg@5", "ndcg"] {
-        let evaluator = create_evaluator(&train_dataset, measure, judgments.clone())?;
-        println!(
-            "\t{}: {:.3}",
-            evaluator.name(),
-            evaluate_mean(&train_dataset, model.as_ref(), evaluator.as_ref())
-        );
-    }
-
+    
+    // Print train and test evaluations:
+    SetEvaluator::print_standard_eval("Train", model.as_ref(), &train_dataset, &judgments);
     if let Some(test_dataset) = test_dataset {
-        println!("Test Performance:");
-        for measure in &["map", "rr", "ndcg@5", "ndcg"] {
-            let evaluator = create_evaluator(&test_dataset, measure, judgments.clone())?;
-            println!(
-                "\t{}: {:.3}",
-                evaluator.name(),
-                evaluate_mean(&test_dataset, model.as_ref(), evaluator.as_ref())
-            );
-        }
+        SetEvaluator::print_standard_eval("Test", model.as_ref(), &test_dataset, &judgments);
     }
 
     Ok(())

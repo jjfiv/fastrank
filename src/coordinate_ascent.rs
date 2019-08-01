@@ -1,5 +1,5 @@
 use crate::dataset::{RankingDataset, Features};
-use crate::evaluators::{evaluate_mean, Evaluator};
+use crate::evaluators::SetEvaluator;
 use crate::model::{Model, WeightedEnsemble};
 use crate::Scored;
 use ordered_float::NotNan;
@@ -115,7 +115,7 @@ const SIGN: &[i32] = &[0, -1, 1];
 fn optimize_inner<R: Rng>(
     restart_id: u32,
     data: &dyn RankingDataset,
-    evaluator: &Evaluator,
+    evaluator: &SetEvaluator,
     mut rand: R,
     params: &CoordinateAscentParams,
 ) -> Scored<DenseLinearRankingModel> {
@@ -127,7 +127,7 @@ fn optimize_inner<R: Rng>(
     model.reset(params.init_random, &mut rand, &data.features());
 
     // Initialize this local best (within current restart cycle):
-    let start_score = evaluate_mean(data, &model, evaluator);
+    let start_score = evaluator.evaluate_mean(&model);
     let mut current_best = Scored::new(start_score, model.clone());
 
     loop {
@@ -178,7 +178,7 @@ fn optimize_inner<R: Rng>(
                     for _ in 0..num_iter {
                         let w = orig_weight + total_step;
                         model.weights[current_feature] = w;
-                        let score = evaluate_mean(data, &model, evaluator);
+                        let score = evaluator.evaluate_mean(&model);
 
                         if current_best.replace_if_better(score, model.clone()) {
                             if !quiet {
@@ -218,7 +218,7 @@ fn optimize_inner<R: Rng>(
 }
 
 impl CoordinateAscentParams {
-    pub fn learn(&self, data: &dyn RankingDataset, evaluator: &Evaluator) -> Box<Model> {
+    pub fn learn(&self, data: &dyn RankingDataset, evaluator: &SetEvaluator) -> Box<Model> {
         let mut rand = Xoshiro256StarStar::seed_from_u64(self.seed);
 
         if !self.quiet {

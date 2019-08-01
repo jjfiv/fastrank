@@ -1,5 +1,5 @@
 use crate::dataset::*;
-use crate::evaluators::{evaluate_mean, Evaluator};
+use crate::evaluators::SetEvaluator;
 use crate::model::{Model, WeightedEnsemble};
 use crate::stats;
 use crate::Scored;
@@ -325,7 +325,7 @@ fn generate_split_candidate(
 pub fn learn_ensemble(
     params: &RandomForestParams,
     dataset: &RankingDataset,
-    evaluator: &Evaluator,
+    evaluator: &SetEvaluator,
 ) -> WeightedEnsemble {
     let mut rand = Xoshiro256StarStar::seed_from_u64(params.seed);
     let seeds: Vec<(u32, u64)> = (0..params.num_trees)
@@ -347,7 +347,7 @@ pub fn learn_ensemble(
             &mut rand,
         );
         let tree = learn_decision_tree(params, &subsample);
-        let eval = evaluate_mean(dataset, &tree, evaluator);
+        let eval = evaluator.evaluate_mean(&tree);
         if !params.quiet {
             println!("|{:>7}|{:>7}|{:>7.3}|", idx + 1, tree.depth(), eval);
         }

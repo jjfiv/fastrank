@@ -1,5 +1,6 @@
 //! Derived from https://github.com/jjfiv/chai/blob/6e0e57f0924f9b4c99b5f8b01034681dcd69c76d/src/main/java/ciir/jfoley/chai/math/StreamingStats.java
 use ordered_float::NotNan;
+use std::cmp;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ComputedStats {
@@ -126,6 +127,47 @@ impl StreamingStats {
     }
 }
 
+pub struct PercentileStats {
+    dataset: Vec<NotNan<f64>>,
+}
+
+impl PercentileStats {
+    pub fn new(dataset: &[f64]) -> Self {
+        let mut dataset: Vec<NotNan<f64>> = dataset
+            .iter()
+            .map(|f| NotNan::new(*f).expect("PercentileStats::NaN"))
+            .collect();
+        dataset.sort_unstable();
+        PercentileStats { dataset }
+    }
+    pub fn median(&self) -> f64 {
+        self.percentile(0.5)
+    }
+    pub fn percentile(&self, percentile: f64) -> f64 {
+        if percentile < 0.0 || percentile > 1.0 {
+            panic!("Bad percentile: {}, should be 0<x<1", percentile);
+        }
+        let n = percentile * ((self.dataset.len() - 1) as f64);
+        let lhs = n.trunc() as usize;
+        let rhs = cmp::min(self.dataset.len(), n.ceil() as usize);
+        let interp = n.fract();
+        if lhs == rhs {
+            return self.dataset[lhs].into_inner();
+        }
+        // LERP:
+        (interp * self.dataset[lhs].into_inner()) + (1.0 - interp) * self.dataset[rhs].into_inner()
+    }
+    pub fn summary(&self) -> (f64, f64, f64, f64, f64) {
+        (
+            self.percentile(0.05),
+            self.percentile(0.25),
+            self.percentile(0.5),
+            self.percentile(0.75),
+            self.percentile(0.95),
+        )
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -149,5 +191,11 @@ mod tests {
         assert_float_eq("max", ss.get_max().unwrap(), 1.0);
         assert_float_eq("min", ss.get_min().unwrap(), 0.0);
         assert_float_eq("total", ss.get_total(), 2.0);
+    }
+
+    #[test]
+    fn test_percentile_stats() {
+        let data = PercentileStats::new(&(0..10).map(|i| i as f64).collect::<Vec<_>>());
+        assert_float_eq("median", data.median(), 5.0)
     }
 }

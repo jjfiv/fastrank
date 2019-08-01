@@ -1,7 +1,7 @@
 use clap::{App, Arg};
 use fastrank::dataset;
 use fastrank::dataset::{DatasetRef, RankingDataset};
-use fastrank::evaluators::{create_evaluator, evaluate_mean};
+use fastrank::evaluators::SetEvaluator;
 use fastrank::model::Model;
 use fastrank::qrel;
 use fastrank::Scored;
@@ -86,7 +86,7 @@ fn main() -> Result<(), Box<Error>> {
         }
     }
 
-    let evaluator = create_evaluator(
+    let evaluator = SetEvaluator::create(
         &train_dataset,
         matches.value_of("training_measure").unwrap_or("map"),
         judgments.clone(),
@@ -119,8 +119,8 @@ fn main() -> Result<(), Box<Error>> {
             .cloned()
             .map(|dir| {
                 let model = SingleFeatureModel { fid, dir };
-                let perf = evaluate_mean(&train_dataset, &model, evaluator.as_ref());
-                Scored::new(perf, model)
+                let perf = evaluator.bootstrap_eval(200, &model);
+                Scored::new(perf.median(), model)
             })
             .max()
             .unwrap();
@@ -142,26 +142,11 @@ fn main() -> Result<(), Box<Error>> {
     let model = models.iter().last().unwrap().item;
 
     println!("MODEL {:?}", model);
-    println!("Training Performance:");
-    for measure in &["map", "rr", "ndcg@5", "ndcg"] {
-        let evaluator = create_evaluator(&train_dataset, measure, judgments.clone())?;
-        println!(
-            "\t{}: {:.3}",
-            evaluator.name(),
-            evaluate_mean(&train_dataset, &model, evaluator.as_ref())
-        );
-    }
 
+    // Print train and test evaluations:
+    SetEvaluator::print_standard_eval("Train", &model, &train_dataset, &judgments);
     if let Some(test_dataset) = test_dataset {
-        println!("Test Performance:");
-        for measure in &["map", "rr", "ndcg@5", "ndcg"] {
-            let evaluator = create_evaluator(&test_dataset, measure, judgments.clone())?;
-            println!(
-                "\t{}: {:.3}",
-                evaluator.name(),
-                evaluate_mean(&test_dataset, &model, evaluator.as_ref())
-            );
-        }
+        SetEvaluator::print_standard_eval("Test", &model, &test_dataset, &judgments);
     }
 
     Ok(())
