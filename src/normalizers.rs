@@ -1,27 +1,5 @@
 use crate::dataset::{FeatureStats, RankingDataset};
-use crate::stats::StreamingStats;
 use ordered_float::NotNan;
-use std::collections::HashMap;
-
-fn compute_feature_stats(dataset: &dyn RankingDataset) -> FeatureStats {
-    let mut stats_builders: HashMap<u32, StreamingStats> = dataset
-        .features()
-        .iter()
-        .cloned()
-        .map(|fid| (fid, StreamingStats::new()))
-        .collect();
-
-    for inst in dataset.instances().iter().cloned() {
-        dataset.get_instance(inst).features.update_stats(&mut stats_builders);
-    }
-
-    FeatureStats {
-        feature_stats: stats_builders
-            .into_iter()
-            .flat_map(|(fid, stats)| stats.finish().map(|cs| (fid, cs)))
-            .collect(),
-    }
-}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum Normalizer {
@@ -33,8 +11,8 @@ pub enum Normalizer {
 impl Normalizer {
     pub fn new(method: &str, dataset: &dyn RankingDataset) -> Result<Normalizer, String> {
         Ok(match method {
-            "zscore" => Normalizer::ZScoreNormalizer(compute_feature_stats(dataset)),
-            "maxmin" | "linear" => Normalizer::MaxMinNormalizer(compute_feature_stats(dataset)),
+            "zscore" => Normalizer::ZScoreNormalizer(FeatureStats::compute(dataset)),
+            "maxmin" | "linear" => Normalizer::MaxMinNormalizer(FeatureStats::compute(dataset)),
             "sigmoid" => Normalizer::SigmoidNormalizer(),
             unkn => Err(format!("Unsupported Normalizer: {}", unkn))?,
         })

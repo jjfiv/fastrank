@@ -204,26 +204,29 @@ impl Model for TreeNode {
 
 struct RecursionParams {
     current_depth: u32,
-    features: Vec<u32>,
-    instances: Vec<u32>,
 }
 
 impl RecursionParams {
-    fn subset(&self, instances: Vec<u32>) -> Self {
+    fn subset(&self) -> Self {
         Self {
             current_depth: self.current_depth + 1,
-            features: self.features.clone(),
-            instances,
         }
     }
-    fn done(&self) -> bool {
-        self.features.is_empty() || self.instances.is_empty()
+    fn done(&self, dataset: &RankingDataset) -> bool {
+        dataset.features().is_empty() || dataset.instances().is_empty()
     }
-    fn choose_split(&self, fsc: &FeatureSplitCandidate) -> (RecursionParams, RecursionParams) {
-        (self.subset(fsc.lhs.clone()), self.subset(fsc.rhs.clone()))
+    fn choose_split(
+        &self,
+        dataset: &RankingDataset,
+        fsc: &FeatureSplitCandidate,
+    ) -> (SampledDatasetRef, SampledDatasetRef) {
+        (
+            dataset.with_instances(&fsc.lhs),
+            dataset.with_instances(&fsc.rhs),
+        )
     }
     fn to_output(&self, dataset: &RankingDataset) -> NotNan<f64> {
-        compute_output(&self.instances, dataset)
+        compute_output(&dataset.instances(), dataset)
     }
 }
 
@@ -245,11 +248,11 @@ struct SplitCandidate {
 fn generate_split_candidate(
     params: &RandomForestParams,
     fid: u32,
-    instances: &[u32],
     dataset: &RankingDataset,
     stats: &stats::ComputedStats,
 ) -> Option<FeatureSplitCandidate> {
-    let label_stats = label_stats(instances, dataset)?;
+    let instances = dataset.instances();
+    let label_stats = label_stats(&instances, dataset)?;
     if label_stats.max == label_stats.min {
         return None;
     }
@@ -337,7 +340,13 @@ pub fn learn_ensemble(
     }
 
     trees.par_extend(seeds.into_par_iter().map(|(idx, rand_seed)| {
-        let tree = learn_decision_tree(rand_seed, params, dataset);
+        let mut rand = Xoshiro256StarStar::seed_from_u64(rand_seed);
+        let subsample = dataset.random_sample(
+            params.feature_sampling_rate,
+            params.instance_sampling_rate,
+            &mut rand,
+        );
+        let tree = learn_decision_tree(params, &subsample);
         let eval = evaluate_mean(dataset, &tree, evaluator);
         if !params.quiet {
             println!("|{:>7}|{:>7}|{:>7.3}|", idx + 1, tree.depth(), eval);
@@ -367,39 +376,14 @@ pub fn learn_ensemble(
     )
 }
 
-pub fn learn_decision_tree(
-    rand_seed: u64,
-    params: &RandomForestParams,
-    dataset: &RankingDataset,
-) -> TreeNode {
-    let mut rand = Xoshiro256StarStar::seed_from_u64(rand_seed);
-    let features = dataset.features();
-    let instances = dataset.instances();
-    let n_features = cmp::max(
-        1,
-        ((features.len() as f64) * params.feature_sampling_rate) as usize,
-    );
-    let n_instances = cmp::max(
-        params.min_leaf_support as usize,
-        ((instances.len() as f64) * params.instance_sampling_rate) as usize,
-    );
-    let step = RecursionParams {
-        features: dataset
-            .features()
-            .choose_multiple(&mut rand, n_features)
-            .cloned()
-            .collect(),
-        instances: (0..instances.len())
-            .map(|i| i as u32)
-            .choose_multiple(&mut rand, n_instances),
-        current_depth: 1,
-    };
+pub fn learn_decision_tree(params: &RandomForestParams, dataset: &RankingDataset) -> TreeNode {
+    let step = RecursionParams { current_depth: 1 };
 
     let root = learn_recursive(params, dataset, &step);
     match root {
         Ok(tree) => tree,
         Err(_e) => {
-            TreeNode::LeafNode(compute_output(&step.instances, dataset))
+            TreeNode::LeafNode(step.to_output(dataset))
             //panic!("{:?} fids={:?} N={}", _e, step.features, step.instances.len())
         }
     }
@@ -445,38 +429,37 @@ fn learn_recursive(
     step: &RecursionParams,
 ) -> Result<TreeNode, NoTreeReason> {
     // Gone too deep:
-    if step.done() {
+    if step.done(dataset) {
         return Err(NoTreeReason::StepDone);
     }
     if step.current_depth >= params.max_depth {
         return Err(NoTreeReason::DepthExceeded);
     }
     // Cannot split further:
-    if step.instances.len() < (params.min_leaf_support * 2) as usize {
+    if dataset.instances().len() < (params.min_leaf_support) as usize {
         return Err(NoTreeReason::SplitTooSmall);
     }
 
-    let feature_stats =
-        compute_feature_subsets(dataset, &step.features, &step.instances).feature_stats;
+    let feature_stats = FeatureStats::compute(dataset).feature_stats;
 
-    let mut candidates: Vec<FeatureSplitCandidate> = step
-        .features
+    let mut candidates: Vec<FeatureSplitCandidate> = dataset
+        .features()
         .iter()
         .flat_map(|fid| {
-            feature_stats.get(fid).and_then(|stats| {
-                generate_split_candidate(params, *fid, &step.instances, dataset, stats)
-            })
+            feature_stats
+                .get(fid)
+                .and_then(|stats| generate_split_candidate(params, *fid, dataset, stats))
         })
         .collect();
 
     candidates.sort_unstable_by_key(|fsc| fsc.importance);
     if let Some(fsc) = candidates.last() {
-        let (lhs_p, rhs_p) = step.choose_split(fsc);
+        let (lhs_d, rhs_d) = step.choose_split(dataset, fsc);
 
-        let left_child = learn_recursive(params, dataset, &lhs_p)
-            .unwrap_or(TreeNode::LeafNode(lhs_p.to_output(dataset)));
-        let right_child = learn_recursive(params, dataset, &rhs_p)
-            .unwrap_or(TreeNode::LeafNode(rhs_p.to_output(dataset)));
+        let left_child = learn_recursive(params, &lhs_d, &step.subset())
+            .unwrap_or(TreeNode::LeafNode(step.to_output(&lhs_d)));
+        let right_child = learn_recursive(params, &rhs_d, &step.subset())
+            .unwrap_or(TreeNode::LeafNode(step.to_output(&rhs_d)));
         Ok(TreeNode::FeatureSplit {
             fid: fsc.fid,
             split: fsc.split,
@@ -521,8 +504,6 @@ mod test {
 
         let dataset = DatasetRef::new(training_instances, None);
         let params = RandomForestParams {
-            instance_sampling_rate: 1.0,
-            feature_sampling_rate: 1.0,
             num_trees: 1,
             min_leaf_support: 1,
             max_depth: 10,
@@ -530,8 +511,9 @@ mod test {
             split_method: SplitSelectionStrategy::SquaredError(),
             ..RandomForestParams::default()
         };
-        let tree = learn_decision_tree(13, &params, &dataset);
+        let tree = learn_decision_tree(&params, &dataset);
 
+        eprintln!("{:?}", tree);
         for inst in dataset.instances() {
             let inst = dataset.get_instance(inst);
             let py = tree.score(&inst.features);

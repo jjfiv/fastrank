@@ -16,6 +16,31 @@ pub struct FeatureStats {
     pub feature_stats: HashMap<u32, ComputedStats>,
 }
 
+impl FeatureStats {
+    pub fn compute(dataset: &dyn RankingDataset) -> FeatureStats {
+        let mut stats_builders: HashMap<u32, StreamingStats> = dataset
+            .features()
+            .iter()
+            .cloned()
+            .map(|fid| (fid, StreamingStats::new()))
+            .collect();
+
+        for inst in dataset.instances().iter().cloned() {
+            dataset
+                .get_instance(inst)
+                .features
+                .update_stats(&mut stats_builders);
+        }
+
+        FeatureStats {
+            feature_stats: stats_builders
+                .into_iter()
+                .flat_map(|(fid, stats)| stats.finish().map(|cs| (fid, cs)))
+                .collect(),
+        }
+    }
+}
+
 pub enum Features {
     Dense32(Vec<f32>),
     /// Sparse 32-bit representation; must be sorted!
@@ -137,9 +162,11 @@ pub trait DatasetSampling {
     /// Sample this dataset randomly to frate percent of features and srate percent of instances.
     /// At least one feature and one instance is selected no matter how small the percentage.
     fn random_sample<R: Rng>(&self, frate: f64, srate: f64, rand: &mut R) -> SampledDatasetRef;
+
+    fn with_instances(&self, instances: &[u32]) -> SampledDatasetRef;
 }
 
-impl DatasetSampling for RankingDataset {
+impl DatasetSampling for &dyn RankingDataset {
     fn random_sample<R: Rng>(&self, frate: f64, srate: f64, rand: &mut R) -> SampledDatasetRef {
         let features = self.features();
         let instances = self.instances();
@@ -160,6 +187,13 @@ impl DatasetSampling for RankingDataset {
             parent: self.get_ref(),
             features,
             instances,
+        }
+    }
+    fn with_instances(&self, instances: &[u32]) -> SampledDatasetRef {
+        SampledDatasetRef {
+            parent: self.get_ref(),
+            instances: instances.iter().cloned().collect(),
+            features: self.features(),
         }
     }
 }
