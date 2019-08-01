@@ -196,6 +196,8 @@ mod tests {
     #[test]
     fn test_percentile_stats() {
         let data = PercentileStats::new(&(0..10).map(|i| i as f64).collect::<Vec<_>>());
-        assert_float_eq("median", data.median(), 5.0)
+        assert_float_eq("median", data.median(), 4.5);
+        let data = PercentileStats::new(&(0..9).map(|i| i as f64).collect::<Vec<_>>());
+        assert_float_eq("median", data.median(), 4.0);
     }
 }
