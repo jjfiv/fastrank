@@ -110,7 +110,9 @@ fn main() -> Result<(), Box<Error>> {
     }
     // explore all features:
     let multiplier = &[-1.0, 1.0];
-    for fid in train_dataset.features.iter().cloned() {
+    let mut features: Vec<u32> = train_dataset.features.iter().cloned().collect();
+    features.sort_unstable();
+    for fid in features {
         let feature_name = feature_names
             .as_ref()
             .and_then(|names| names.get(&fid).cloned())
