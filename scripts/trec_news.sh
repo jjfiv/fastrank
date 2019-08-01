@@ -9,5 +9,6 @@ cargo build --release &&
   --feature_names ${DIR}/feature_names.json \
   --normalize_weights \
   --metric2t ndcg \
+  - i 0 \
   --seed 42 "$@"
 
