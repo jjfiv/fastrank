@@ -2,3 +2,10 @@
 **/*.rs.bk
 Cargo.lock
 /data
+*.ranklib
+*-ranklib*
+/news-bg*/
+/ent-*/
+/bg-*/
+/logs/
+*.model
