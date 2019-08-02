@@ -16,6 +16,7 @@ rayon = "=1.1.0"
 serde = "1"
 serde_json = "1"
 serde_derive = "1"
+ndarray = "0.12.1"
 
 [dependencies.ordered-float]
 version = "1.0"

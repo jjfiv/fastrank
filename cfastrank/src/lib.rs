@@ -4,6 +4,7 @@ use serde_json;
 use std::error::Error;
 use std::ffi::{CStr, CString};
 use std::mem;
+use std::slice;
 
 use fastrank::dataset::DatasetRef;
 use fastrank::model::Model;
@@ -41,4 +42,17 @@ fn result_exec_json(query_str: &CStr) -> Result<String, Box<Error>> {
 
     let args: serde_json::Value = serde_json::from_str(query_str)?;
     Ok(format!("result_exec_json: {:?}", args))
+}
+
+#[no_mangle]
+pub extern "C" fn create_dense_dataset_f32_f64_i64(n: usize, d: usize, x: *const f32, y: *const f64, qids: *const i64) {
+    let x_len = n * d;
+    let x_slice = unsafe { slice::from_raw_parts(x, x_len) };
+    let y_slice = unsafe { slice::from_raw_parts(y, n) };
+    let qid_slice = unsafe { slice::from_raw_parts(qids, n) };
+    for fid in 0..d {
+        println!("f[17][{}] = {}", fid, x_slice[17 * d + fid]);
+    }
+    println!("y[17]={}", y_slice[17]);
+    println!("qid[17]={}", qid_slice[17]);
 }
