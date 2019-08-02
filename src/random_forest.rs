@@ -1,6 +1,6 @@
 use crate::dataset::{RankingDataset, SampledDatasetRef};
 use crate::evaluators::SetEvaluator;
-use crate::instance::Features;
+use crate::instance::{Features, Relevance};
 use crate::model::{Model, WeightedEnsemble};
 use crate::normalizers::FeatureStats;
 use crate::sampling::DatasetSampling;
@@ -13,7 +13,6 @@ use rand_xoshiro::rand_core::SeedableRng;
 use rand_xoshiro::Xoshiro256StarStar;
 use rayon::prelude::*;
 use std::cmp;
-use std::collections::HashMap;
 use std::sync::Arc;
 
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -30,7 +29,7 @@ pub fn label_stats(
 ) -> Option<stats::ComputedStats> {
     let mut label_stats = stats::StreamingStats::new();
     for index in instances.iter().cloned() {
-        label_stats.push(dataset.get_instance(index).gain.into_inner() as f64);
+        label_stats.push(dataset.get_instance(index).gain().into_inner() as f64);
     }
     label_stats.finish()
 }
@@ -42,7 +41,7 @@ fn compute_output(ids: &[InstanceId], dataset: &dyn RankingDataset) -> NotNan<f6
     for gain in ids
         .iter()
         .cloned()
-        .map(|index| dataset.get_instance(index).gain)
+        .map(|index| dataset.get_instance(index).gain())
     {
         gain_sum += gain.into_inner() as f64;
     }
@@ -55,7 +54,7 @@ fn squared_error(ids: &[InstanceId], dataset: &dyn RankingDataset) -> NotNan<f64
     for gain in ids
         .iter()
         .cloned()
-        .map(|index| dataset.get_instance(index).gain)
+        .map(|index| dataset.get_instance(index).gain())
     {
         let diff = output - f64::from(gain.into_inner());
         sum_sq_errors += (diff * diff).into_inner();
@@ -406,32 +405,6 @@ enum NoTreeReason {
     NoFeatureSplitCandidates,
 }
 
-pub fn compute_feature_subsets(
-    dataset: &dyn RankingDataset,
-    features: &[FeatureId],
-    instances: &[InstanceId],
-) -> FeatureStats {
-    let mut stats_builders: HashMap<FeatureId, stats::StreamingStats> = features
-        .iter()
-        .cloned()
-        .map(|fid| (fid, stats::StreamingStats::new()))
-        .collect();
-
-    for index in instances.iter().cloned() {
-        dataset
-            .get_instance(index)
-            .features
-            .update_stats(&mut stats_builders);
-    }
-
-    FeatureStats {
-        feature_stats: stats_builders
-            .into_iter()
-            .flat_map(|(fid, stats)| stats.finish().map(|cs| (fid, cs)))
-            .collect(),
-    }
-}
-
 fn learn_recursive(
     params: &RandomForestParams,
     dataset: &RankingDataset,
@@ -484,7 +457,7 @@ fn learn_recursive(
 mod test {
     use super::*;
     use crate::dataset::DatasetRef;
-    use crate::instance::TrainingInstance;
+    use crate::instance::Instance;
 
     fn single_feature(x: f32) -> Features {
         Features::Dense32(vec![x])
@@ -507,10 +480,10 @@ mod test {
             .map(|y| NotNan::new(*y as f32).unwrap())
             .collect();
 
-        let training_instances: Vec<TrainingInstance> = xs
+        let training_instances: Vec<Instance> = xs
             .iter()
             .enumerate()
-            .map(|(i, x)| TrainingInstance::new(ys[i], "query".to_string(), single_feature(*x)))
+            .map(|(i, x)| Instance::new(ys[i], "query".to_string(), single_feature(*x)))
             .collect();
 
         let dataset = DatasetRef::new(training_instances, None);
@@ -527,11 +500,14 @@ mod test {
         eprintln!("{:?}", tree);
         for inst in dataset.instances() {
             let inst = dataset.get_instance(inst);
-            let py = tree.score(&inst.features);
+            let py = tree.score(inst.features());
             assert_float_eq(
-                &format!("x={}", inst.features.get(FeatureId::from_index(0)).unwrap()),
+                &format!(
+                    "x={}",
+                    inst.features().get(FeatureId::from_index(0)).unwrap()
+                ),
                 *py,
-                inst.gain.into_inner().into(),
+                inst.gain().into_inner().into(),
             );
         }
     }

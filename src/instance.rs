@@ -61,13 +61,48 @@ impl Features {
     }
 }
 
-pub struct TrainingInstance {
+pub trait TrainingInstance: Send + Sync {
+    fn gain(&self) -> NotNan<f32>;
+    fn qid(&self) -> &str;
+    fn features(&self) -> &Features;
+}
+
+pub trait Relevance {
+    fn is_relevant(&self) -> bool;
+    fn perceptron_label(&self) -> i32;
+}
+impl Relevance for &TrainingInstance {
+    fn is_relevant(&self) -> bool {
+        self.gain().into_inner() > 0.0
+    }
+    fn perceptron_label(&self) -> i32 {
+        if self.is_relevant() {
+            1
+        } else {
+            -1
+        }
+    }
+}
+
+pub struct Instance {
     pub gain: NotNan<f32>,
     pub qid: String,
     pub features: Features,
 }
 
-impl TrainingInstance {
+impl TrainingInstance for Instance {
+    fn gain(&self) -> NotNan<f32> {
+        self.gain.clone()
+    }
+    fn qid(&self) -> &str {
+        self.qid.as_str()
+    }
+    fn features(&self) -> &Features {
+        &self.features
+    }
+}
+
+impl Instance {
     pub fn new(gain: NotNan<f32>, qid: String, features: Features) -> Self {
         Self {
             gain,
@@ -75,7 +110,7 @@ impl TrainingInstance {
             features,
         }
     }
-    pub fn try_new(libsvm: libsvm::Instance) -> Result<TrainingInstance, &'static str> {
+    pub fn try_new(libsvm: libsvm::Instance) -> Result<Instance, &'static str> {
         // Convert features to dense representation if it's worthwhile.
         let max_feature = libsvm.features.iter().map(|f| f.idx).max().unwrap_or(1);
         let density = (libsvm.features.len() as f64) / (max_feature as f64);
@@ -95,20 +130,10 @@ impl TrainingInstance {
             )
         };
 
-        Ok(TrainingInstance {
+        Ok(Instance {
             gain: libsvm.label,
             qid: libsvm.query.ok_or("Missing qid")?,
             features,
         })
-    }
-    pub fn is_relevant(&self) -> bool {
-        self.gain.into_inner() > 0.0
-    }
-    pub fn perceptron_label(&self) -> i32 {
-        if self.is_relevant() {
-            1
-        } else {
-            -1
-        }
     }
 }

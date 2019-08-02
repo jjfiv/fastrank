@@ -1,4 +1,4 @@
-use crate::instance::TrainingInstance;
+use crate::instance::{Instance, TrainingInstance};
 use crate::io_helper;
 use crate::libsvm;
 use crate::normalizers::Normalizer;
@@ -105,7 +105,7 @@ impl RankingDataset for SampledDatasetRef {
     fn instances_by_query(&self) -> HashMap<String, Vec<InstanceId>> {
         let mut out = HashMap::new();
         for id in self.instances.iter().cloned() {
-            out.entry(self.parent.get_instance(id).qid.to_owned())
+            out.entry(self.parent.get_instance(id).qid().to_owned())
                 .or_insert(Vec::new())
                 .push(id);
         }
@@ -114,7 +114,7 @@ impl RankingDataset for SampledDatasetRef {
     fn queries(&self) -> Vec<String> {
         let mut out: HashSet<&str> = HashSet::new();
         for id in self.instances.iter().cloned() {
-            out.insert(&self.parent.get_instance(id).qid);
+            out.insert(self.parent.get_instance(id).qid());
         }
         out.iter().map(|s| s.to_string()).collect()
     }
@@ -147,10 +147,7 @@ impl DatasetRef {
             data: Arc::new(LoadedRankingDataset::load_libsvm(path, feature_names)?),
         })
     }
-    pub fn new(
-        data: Vec<TrainingInstance>,
-        feature_names: Option<&HashMap<FeatureId, String>>,
-    ) -> Self {
+    pub fn new(data: Vec<Instance>, feature_names: Option<&HashMap<FeatureId, String>>) -> Self {
         DatasetRef {
             data: Arc::new(LoadedRankingDataset::new(data, feature_names)),
         }
@@ -158,7 +155,7 @@ impl DatasetRef {
 }
 
 pub struct LoadedRankingDataset {
-    pub instances: Vec<TrainingInstance>,
+    pub instances: Vec<Instance>,
     pub features: Vec<FeatureId>,
     pub n_dim: u32,
     pub normalization: Option<Normalizer>,
@@ -179,15 +176,12 @@ impl LoadedRankingDataset {
         let reader = io_helper::open_reader(path)?;
         let mut instances = Vec::new();
         for inst in libsvm::instances(reader) {
-            let inst = TrainingInstance::try_new(inst?)?;
+            let inst = Instance::try_new(inst?)?;
             instances.push(inst);
         }
         Ok(Self::new(instances, feature_names))
     }
-    pub fn new(
-        data: Vec<TrainingInstance>,
-        feature_names: Option<&HashMap<FeatureId, String>>,
-    ) -> Self {
+    pub fn new(data: Vec<Instance>, feature_names: Option<&HashMap<FeatureId, String>>) -> Self {
         // Collect features that are actually present.
         let mut features: HashSet<FeatureId> = HashSet::new();
         // Collect training instances by the query.
@@ -254,7 +248,7 @@ impl RankingDataset for LoadedRankingDataset {
             .map(|i| InstanceId::from_index(i))
             .collect()
     }
-    fn get_instance(&self, id: InstanceId) -> &TrainingInstance {
+    fn get_instance(&self, id: InstanceId) -> &dyn TrainingInstance {
         &self.instances[id.to_index()]
     }
     fn instances_by_query(&self) -> HashMap<String, Vec<InstanceId>> {

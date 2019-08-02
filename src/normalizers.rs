@@ -21,7 +21,7 @@ impl FeatureStats {
         for inst in dataset.instances().iter().cloned() {
             dataset
                 .get_instance(inst)
-                .features
+                .features()
                 .update_stats(&mut stats_builders);
         }
 
