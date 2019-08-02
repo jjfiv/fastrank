@@ -21,7 +21,7 @@ pub enum SplitSelectionStrategy {
 }
 
 pub fn label_stats(
-    instances: &[u32],
+    instances: &[InstanceId],
     dataset: &dyn RankingDataset,
 ) -> Option<stats::ComputedStats> {
     let mut label_stats = stats::StreamingStats::new();
@@ -30,7 +30,7 @@ pub fn label_stats(
     }
     label_stats.finish()
 }
-fn compute_output(ids: &[u32], dataset: &dyn RankingDataset) -> NotNan<f64> {
+fn compute_output(ids: &[InstanceId], dataset: &dyn RankingDataset) -> NotNan<f64> {
     if ids.len() == 0 {
         return NotNan::new(0.0).unwrap();
     }
@@ -44,7 +44,7 @@ fn compute_output(ids: &[u32], dataset: &dyn RankingDataset) -> NotNan<f64> {
     }
     NotNan::new(gain_sum / (ids.len() as f64)).expect("Leaf output NaN.")
 }
-fn squared_error(ids: &[u32], dataset: &dyn RankingDataset) -> NotNan<f64> {
+fn squared_error(ids: &[InstanceId], dataset: &dyn RankingDataset) -> NotNan<f64> {
     let output = compute_output(ids, dataset);
 
     let mut sum_sq_errors = 0.0;
@@ -58,7 +58,7 @@ fn squared_error(ids: &[u32], dataset: &dyn RankingDataset) -> NotNan<f64> {
     }
     NotNan::new(sum_sq_errors).unwrap()
 }
-fn gini_impurity(ids: &[u32], dataset: &RankingDataset) -> NotNan<f64> {
+fn gini_impurity(ids: &[InstanceId], dataset: &RankingDataset) -> NotNan<f64> {
     if ids.len() == 0 {
         return NotNan::new(0.0).unwrap();
     }
@@ -80,7 +80,7 @@ fn plogp(x: f64) -> NotNan<f64> {
         NotNan::new(x * x.log2()).expect("entropy/plogp returned NaN")
     }
 }
-fn entropy(ids: &[u32], dataset: &RankingDataset) -> NotNan<f64> {
+fn entropy(ids: &[InstanceId], dataset: &RankingDataset) -> NotNan<f64> {
     if ids.len() == 0 {
         return NotNan::new(0.0).unwrap();
     }
@@ -97,7 +97,12 @@ fn entropy(ids: &[u32], dataset: &RankingDataset) -> NotNan<f64> {
 }
 
 impl SplitSelectionStrategy {
-    fn importance(&self, lhs: &[u32], rhs: &[u32], dataset: &RankingDataset) -> NotNan<f64> {
+    fn importance(
+        &self,
+        lhs: &[InstanceId],
+        rhs: &[InstanceId],
+        dataset: &RankingDataset,
+    ) -> NotNan<f64> {
         match self {
             SplitSelectionStrategy::SquaredError() => {
                 -(squared_error(lhs, dataset) + squared_error(rhs, dataset))
@@ -163,7 +168,7 @@ impl Default for RandomForestParams {
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub enum TreeNode {
     FeatureSplit {
-        fid: u32,
+        fid: FeatureId,
         split: NotNan<f64>,
         lhs: Box<TreeNode>,
         rhs: Box<TreeNode>,
@@ -231,10 +236,10 @@ impl RecursionParams {
 }
 
 struct FeatureSplitCandidate {
-    fid: u32,
+    fid: FeatureId,
     split: NotNan<f64>,
-    lhs: Vec<u32>,
-    rhs: Vec<u32>,
+    lhs: Vec<InstanceId>,
+    rhs: Vec<InstanceId>,
     importance: NotNan<f64>,
 }
 
@@ -247,7 +252,7 @@ struct SplitCandidate {
 
 fn generate_split_candidate(
     params: &RandomForestParams,
-    fid: u32,
+    fid: FeatureId,
     dataset: &RankingDataset,
     stats: &stats::ComputedStats,
 ) -> Option<FeatureSplitCandidate> {
@@ -259,7 +264,7 @@ fn generate_split_candidate(
     let k = params.split_candidates;
     let range = stats.max - stats.min;
 
-    let mut instance_feature: Vec<Scored<u32>> = instances
+    let mut instance_feature: Vec<Scored<InstanceId>> = instances
         .iter()
         .cloned()
         .map(|i| Scored::new(dataset.get_feature_value(i, fid).unwrap_or(0.0), i))
@@ -267,7 +272,7 @@ fn generate_split_candidate(
     instance_feature.sort_unstable();
 
     let scores: Vec<NotNan<f64>> = instance_feature.iter().map(|sf| sf.score).collect();
-    let ids: Vec<u32> = instance_feature.into_iter().map(|sf| sf.item).collect();
+    let ids: Vec<InstanceId> = instance_feature.into_iter().map(|sf| sf.item).collect();
 
     // TODO all splits instead...
     let splits: Vec<NotNan<f64>> = (1..k)
@@ -399,10 +404,10 @@ enum NoTreeReason {
 
 pub fn compute_feature_subsets(
     dataset: &dyn RankingDataset,
-    features: &[u32],
-    instances: &[u32],
+    features: &[FeatureId],
+    instances: &[InstanceId],
 ) -> FeatureStats {
-    let mut stats_builders: HashMap<u32, stats::StreamingStats> = features
+    let mut stats_builders: HashMap<FeatureId, stats::StreamingStats> = features
         .iter()
         .cloned()
         .map(|fid| (fid, stats::StreamingStats::new()))
@@ -518,7 +523,7 @@ mod test {
             let inst = dataset.get_instance(inst);
             let py = tree.score(&inst.features);
             assert_float_eq(
-                &format!("x={}", inst.features.get(0).unwrap()),
+                &format!("x={}", inst.features.get(FeatureId::from_index(0)).unwrap()),
                 *py,
                 inst.gain.into_inner().into(),
             );

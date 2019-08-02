@@ -1,6 +1,6 @@
 use clap::{App, Arg};
 use fastrank::dataset;
-use fastrank::dataset::{DatasetRef, RankingDataset};
+use fastrank::dataset::{DatasetRef, RankingDataset, FeatureId};
 use fastrank::evaluators::SetEvaluator;
 use fastrank::model::Model;
 use fastrank::qrel;
@@ -11,7 +11,7 @@ use std::error::Error;
 
 #[derive(Debug, Clone, Copy)]
 pub struct SingleFeatureModel {
-    fid: u32,
+    fid: FeatureId,
     dir: f64,
 }
 
@@ -76,7 +76,7 @@ fn main() -> Result<(), Box<Error>> {
         .map(|test_file| DatasetRef::load_libsvm(test_file, feature_names.as_ref()))
         .transpose()?;
     // Feature Set to Explore:
-    let mut features: HashSet<u32> = train_dataset.features().iter().cloned().collect();
+    let mut features: HashSet<FeatureId> = train_dataset.features().iter().cloned().collect();
 
     if let Some(features_to_ignore) = matches.values_of("ignore_features") {
         // Only need to remove it from training.
@@ -113,7 +113,7 @@ fn main() -> Result<(), Box<Error>> {
         let feature_name = feature_names
             .as_ref()
             .and_then(|names| names.get(&fid).cloned())
-            .unwrap_or(format!("{}", fid));
+            .unwrap_or(format!("{}", fid.to_index()));
         let best_by_dir = multiplier
             .iter()
             .cloned()
@@ -128,7 +128,7 @@ fn main() -> Result<(), Box<Error>> {
         if !quiet {
             println!(
                 "{:3} | {:16} | {:4.0} | {:9.3}",
-                fid, feature_name, best_by_dir.item.dir, best_by_dir.score
+                fid.to_index(), feature_name, best_by_dir.item.dir, best_by_dir.score
             );
         }
 

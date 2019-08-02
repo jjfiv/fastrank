@@ -11,14 +11,41 @@ use std::error::Error;
 use std::f64;
 use std::sync::Arc;
 
+#[derive(Debug,Clone,Copy,PartialEq,Eq,PartialOrd,Ord,Hash,Serialize,Deserialize)]
+#[repr(transparent)]
+#[serde(transparent)]
+pub struct FeatureId(u32);
+
+impl FeatureId {
+    pub fn from_index(idx: usize) -> Self {
+        Self(idx as u32)
+    }
+    pub fn to_index(&self) -> usize {
+        self.0 as usize
+    }
+}
+
+#[derive(Debug,Clone,Copy,PartialEq,Eq,PartialOrd,Ord,Hash,Serialize,Deserialize)]
+#[repr(transparent)]
+#[serde(transparent)]
+pub struct InstanceId(u32);
+impl InstanceId {
+    pub fn from_index(idx: usize) -> Self {
+        Self(idx as u32)
+    }
+    pub fn to_index(&self) -> usize {
+        self.0 as usize
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FeatureStats {
-    pub feature_stats: HashMap<u32, ComputedStats>,
+    pub feature_stats: HashMap<FeatureId, ComputedStats>,
 }
 
 impl FeatureStats {
     pub fn compute(dataset: &dyn RankingDataset) -> FeatureStats {
-        let mut stats_builders: HashMap<u32, StreamingStats> = dataset
+        let mut stats_builders: HashMap<FeatureId, StreamingStats> = dataset
             .features()
             .iter()
             .cloned()
@@ -44,13 +71,13 @@ impl FeatureStats {
 pub enum Features {
     Dense32(Vec<f32>),
     /// Sparse 32-bit representation; must be sorted!
-    Sparse32(Vec<(u32, f32)>),
+    Sparse32(Vec<(FeatureId, f32)>),
 }
 
 impl Features {
-    pub fn get(&self, idx: u32) -> Option<f64> {
+    pub fn get(&self, idx: FeatureId) -> Option<f64> {
         match self {
-            Features::Dense32(arr) => arr.get(idx as usize).map(|val| f64::from(*val)),
+            Features::Dense32(arr) => arr.get(idx.to_index()).map(|val| f64::from(*val)),
             Features::Sparse32(features) => {
                 for (fidx, val) in features.iter() {
                     if *fidx == idx {
@@ -63,15 +90,15 @@ impl Features {
             }
         }
     }
-    pub fn ids(&self) -> Vec<u32> {
-        let mut features: Vec<u32> = Vec::new();
+    pub fn ids(&self) -> Vec<FeatureId> {
+        let mut features: Vec<FeatureId> = Vec::new();
         match self {
-            Features::Dense32(arr) => features.extend(0..(arr.len() as u32)),
+            Features::Dense32(arr) => features.extend( (0..arr.len()).map(|idx| FeatureId::from_index(idx)) ),
             Features::Sparse32(arr) => features.extend(arr.iter().map(|(idx, _)| *idx)),
         }
         features
     }
-    pub fn update_stats(&self, per_feature_stats: &mut HashMap<u32, StreamingStats>) {
+    pub fn update_stats(&self, per_feature_stats: &mut HashMap<FeatureId, StreamingStats>) {
         for (fid, stats) in per_feature_stats.iter_mut() {
             if let Some(x) = self.get(*fid) {
                 stats.push(x);
@@ -83,8 +110,7 @@ impl Features {
         match self {
             Features::Dense32(arr) => {
                 for (fid, val) in arr.iter_mut().enumerate() {
-                    let fid = fid as u32;
-                    *val = normalizer.normalize(fid, *val);
+                    *val = normalizer.normalize(FeatureId::from_index(fid), *val);
                 }
             }
             Features::Sparse32(arr) => {
@@ -125,7 +151,7 @@ impl TrainingInstance {
                 libsvm
                     .features
                     .into_iter()
-                    .map(|f| (f.idx, f.value))
+                    .map(|f| (FeatureId::from_index(f.idx as usize), f.value))
                     .collect(),
             )
         };
@@ -148,12 +174,12 @@ impl TrainingInstance {
     }
 }
 
-pub fn load_feature_names_json(path: &str) -> Result<HashMap<u32, String>, Box<std::error::Error>> {
+pub fn load_feature_names_json(path: &str) -> Result<HashMap<FeatureId, String>, Box<std::error::Error>> {
     let reader = io_helper::open_reader(path)?;
     let data: HashMap<String, String> = serde_json::from_reader(reader)?;
-    let data: Result<HashMap<u32, String>, _> = data
+    let data: Result<HashMap<FeatureId, String>, _> = data
         .into_iter()
-        .map(|(k, v)| k.parse::<u32>().map(|num| (num, v)))
+        .map(|(k, v)| k.parse::<usize>().map(|num| (FeatureId::from_index(num), v)))
         .collect();
     Ok(data?)
 }
@@ -164,7 +190,7 @@ pub trait DatasetSampling {
     fn random_sample<R: Rng>(&self, frate: f64, srate: f64, rand: &mut R) -> SampledDatasetRef;
 
     /// This represents a deterministic sampling of instances.
-    fn with_instances(&self, instances: &[u32]) -> SampledDatasetRef;
+    fn with_instances(&self, instances: &[InstanceId]) -> SampledDatasetRef;
 
     /// This represents a determinisitc sampling of queries.
     fn with_queries(&self, queries: &[String]) -> SampledDatasetRef;
@@ -193,7 +219,7 @@ impl DatasetSampling for &dyn RankingDataset {
             .map(|s| s.as_str())
             .collect();
         
-        let mut instances: Vec<u32> = Vec::new();
+        let mut instances: Vec<InstanceId> = Vec::new();
 
         for (qid, qinst) in self.instances_by_query() {
             if queries.contains(qid.as_str()) {
@@ -207,7 +233,7 @@ impl DatasetSampling for &dyn RankingDataset {
             instances,
         }
     }
-    fn with_instances(&self, instances: &[u32]) -> SampledDatasetRef {
+    fn with_instances(&self, instances: &[InstanceId]) -> SampledDatasetRef {
         SampledDatasetRef {
             parent: self.get_ref(),
             instances: instances.iter().cloned().collect(),
@@ -217,7 +243,7 @@ impl DatasetSampling for &dyn RankingDataset {
 
     fn with_queries(&self, queries: &[String]) -> SampledDatasetRef {
         let query_set: HashSet<&str> = queries.iter().map(|s| s.as_str()).collect();
-        let mut instances: Vec<u32> = Vec::new();
+        let mut instances: Vec<InstanceId> = Vec::new();
 
         for (qid, qinst) in self.instances_by_query() {
             if query_set.contains(qid.as_str()) {
@@ -259,18 +285,18 @@ impl DatasetSampling for &dyn RankingDataset {
 
 pub trait RankingDataset: Send + Sync {
     fn get_ref(&self) -> DatasetRef;
-    fn features(&self) -> Vec<u32>;
+    fn features(&self) -> Vec<FeatureId>;
     fn n_dim(&self) -> u32;
-    fn instances(&self) -> Vec<u32>;
-    fn get_instance(&self, id: u32) -> &TrainingInstance;
-    fn instances_by_query(&self) -> HashMap<String, Vec<u32>>;
+    fn instances(&self) -> Vec<InstanceId>;
+    fn get_instance(&self, id: InstanceId) -> &TrainingInstance;
+    fn instances_by_query(&self) -> HashMap<String, Vec<InstanceId>>;
     fn queries(&self) -> Vec<String>;
     /// For printing, the name if available or the number.
-    fn feature_name(&self, fid: u32) -> String;
+    fn feature_name(&self, fid: FeatureId) -> String;
     /// Lookup a feature value for a particular instance.
-    fn get_feature_value(&self, instance: u32, fid: u32) -> Option<f64>;
+    fn get_feature_value(&self, instance: InstanceId, fid: FeatureId) -> Option<f64>;
     // Given a name or number as a string, lookup the feature id:
-    fn try_lookup_feature(&self, name_or_num: &str) -> Result<u32, Box<Error>>;
+    fn try_lookup_feature(&self, name_or_num: &str) -> Result<FeatureId, Box<Error>>;
 }
 
 /// This is an Arc wrapper around a LoadedRankingDataset, for cheaper copies.
@@ -283,31 +309,31 @@ impl RankingDataset for DatasetRef {
     fn get_ref(&self) -> DatasetRef {
         self.clone()
     }
-    fn features(&self) -> Vec<u32> {
+    fn features(&self) -> Vec<FeatureId> {
         self.data.features()
     }
     fn n_dim(&self) -> u32 {
         self.data.n_dim()
     }
-    fn instances(&self) -> Vec<u32> {
+    fn instances(&self) -> Vec<InstanceId> {
         self.data.instances()
     }
-    fn get_instance(&self, id: u32) -> &TrainingInstance {
+    fn get_instance(&self, id: InstanceId) -> &TrainingInstance {
         self.data.get_instance(id)
     }
-    fn instances_by_query(&self) -> HashMap<String, Vec<u32>> {
+    fn instances_by_query(&self) -> HashMap<String, Vec<InstanceId>> {
         self.data.instances_by_query()
     }
     fn queries(&self) -> Vec<String> {
         self.data.queries()
     }
-    fn feature_name(&self, fid: u32) -> String {
+    fn feature_name(&self, fid: FeatureId) -> String {
         self.data.feature_name(fid)
     }
-    fn get_feature_value(&self, instance: u32, fid: u32) -> Option<f64> {
+    fn get_feature_value(&self, instance: InstanceId, fid: FeatureId) -> Option<f64> {
         self.data.get_feature_value(instance, fid)
     }
-    fn try_lookup_feature(&self, name_or_num: &str) -> Result<u32, Box<Error>> {
+    fn try_lookup_feature(&self, name_or_num: &str) -> Result<FeatureId, Box<Error>> {
         self.data.try_lookup_feature(name_or_num)
     }
 }
@@ -315,27 +341,27 @@ impl RankingDataset for DatasetRef {
 #[derive(Clone)]
 pub struct SampledDatasetRef {
     pub parent: DatasetRef,
-    pub features: Vec<u32>,
-    pub instances: Vec<u32>,
+    pub features: Vec<FeatureId>,
+    pub instances: Vec<InstanceId>,
 }
 
 impl RankingDataset for SampledDatasetRef {
     fn get_ref(&self) -> DatasetRef {
         self.parent.clone()
     }
-    fn features(&self) -> Vec<u32> {
+    fn features(&self) -> Vec<FeatureId> {
         self.features.clone()
     }
     fn n_dim(&self) -> u32 {
         self.features.len() as u32
     }
-    fn instances(&self) -> Vec<u32> {
+    fn instances(&self) -> Vec<InstanceId> {
         self.instances.clone()
     }
-    fn get_instance(&self, id: u32) -> &TrainingInstance {
+    fn get_instance(&self, id: InstanceId) -> &TrainingInstance {
         self.parent.get_instance(id)
     }
-    fn instances_by_query(&self) -> HashMap<String, Vec<u32>> {
+    fn instances_by_query(&self) -> HashMap<String, Vec<InstanceId>> {
         let mut out = HashMap::new();
         for id in self.instances.iter().cloned() {
             out.entry(self.parent.get_instance(id).qid.to_owned())
@@ -351,20 +377,20 @@ impl RankingDataset for SampledDatasetRef {
         }
         out.iter().map(|s| s.to_string()).collect()
     }
-    fn feature_name(&self, fid: u32) -> String {
+    fn feature_name(&self, fid: FeatureId) -> String {
         self.parent.feature_name(fid)
     }
-    fn get_feature_value(&self, instance: u32, fid: u32) -> Option<f64> {
+    fn get_feature_value(&self, instance: InstanceId, fid: FeatureId) -> Option<f64> {
         self.parent.get_feature_value(instance, fid)
     }
-    fn try_lookup_feature(&self, name_or_num: &str) -> Result<u32, Box<Error>> {
+    fn try_lookup_feature(&self, name_or_num: &str) -> Result<FeatureId, Box<Error>> {
         let fid = self.parent.try_lookup_feature(name_or_num)?;
         if self.features.contains(&fid) {
             return Ok(fid);
         } else {
             Err(format!(
                 "Feature not in subsample: {}: {}",
-                name_or_num, fid
+                name_or_num, fid.to_index()
             ))?
         }
     }
@@ -373,13 +399,13 @@ impl RankingDataset for SampledDatasetRef {
 impl DatasetRef {
     pub fn load_libsvm(
         path: &str,
-        feature_names: Option<&HashMap<u32, String>>,
+        feature_names: Option<&HashMap<FeatureId, String>>,
     ) -> Result<DatasetRef, Box<std::error::Error>> {
         Ok(DatasetRef {
             data: Arc::new(LoadedRankingDataset::load_libsvm(path, feature_names)?),
         })
     }
-    pub fn new(data: Vec<TrainingInstance>, feature_names: Option<&HashMap<u32, String>>) -> Self {
+    pub fn new(data: Vec<TrainingInstance>, feature_names: Option<&HashMap<FeatureId, String>>) -> Self {
         DatasetRef {
             data: Arc::new(LoadedRankingDataset::new(data, feature_names)),
         }
@@ -388,11 +414,11 @@ impl DatasetRef {
 
 pub struct LoadedRankingDataset {
     pub instances: Vec<TrainingInstance>,
-    pub features: Vec<u32>,
+    pub features: Vec<FeatureId>,
     pub n_dim: u32,
     pub normalization: Option<Normalizer>,
-    pub data_by_query: HashMap<String, Vec<u32>>,
-    pub feature_names: HashMap<u32, String>,
+    pub data_by_query: HashMap<String, Vec<InstanceId>>,
+    pub feature_names: HashMap<FeatureId, String>,
 }
 
 impl LoadedRankingDataset {
@@ -403,7 +429,7 @@ impl LoadedRankingDataset {
     }
     pub fn load_libsvm(
         path: &str,
-        feature_names: Option<&HashMap<u32, String>>,
+        feature_names: Option<&HashMap<FeatureId, String>>,
     ) -> Result<LoadedRankingDataset, Box<std::error::Error>> {
         let reader = io_helper::open_reader(path)?;
         let mut instances = Vec::new();
@@ -413,20 +439,20 @@ impl LoadedRankingDataset {
         }
         Ok(Self::new(instances, feature_names))
     }
-    pub fn new(data: Vec<TrainingInstance>, feature_names: Option<&HashMap<u32, String>>) -> Self {
+    pub fn new(data: Vec<TrainingInstance>, feature_names: Option<&HashMap<FeatureId, String>>) -> Self {
         // Collect features that are actually present.
-        let mut features: HashSet<u32> = HashSet::new();
+        let mut features: HashSet<FeatureId> = HashSet::new();
         // Collect training instances by the query.
-        let mut data_by_query: HashMap<String, Vec<u32>> = HashMap::new();
+        let mut data_by_query: HashMap<String, Vec<InstanceId>> = HashMap::new();
         for (i, inst) in data.iter().enumerate() {
             data_by_query
                 .entry(inst.qid.clone())
                 .or_insert(Vec::new())
-                .push(i as u32);
+                .push(InstanceId::from_index(i));
             features.extend(inst.features.ids());
         }
         // Get a sorted list of active features in this dataset.
-        let mut features: Vec<u32> = features.iter().cloned().collect();
+        let mut features: Vec<FeatureId> = features.iter().cloned().collect();
         features.sort_unstable();
 
         // Calculate the number of features, including any missing ones, so we can have a dense linear model.
@@ -435,12 +461,13 @@ impl LoadedRankingDataset {
             .cloned()
             .max()
             .expect("No features defined!")
+            .to_index()
             + 1;
 
         LoadedRankingDataset {
             instances: data,
             features,
-            n_dim,
+            n_dim: n_dim as u32,
             normalization: None,
             data_by_query,
             feature_names: feature_names.cloned().unwrap_or(HashMap::new()),
@@ -457,38 +484,10 @@ impl LoadedRankingDataset {
     }
 
     /// Remove a feature or return "not-found".
-    pub fn try_remove_feature(&mut self, name_or_num: &str) -> Result<(), String> {
-        if let Some((num, _)) = self
-            .feature_names
-            .iter()
-            .find(|(_, v)| v.as_str() == name_or_num)
-        {
-            if let Some(idx) = self.features.iter().position(|n| n == num) {
-                self.features.swap_remove(idx);
-                return Ok(());
-            } else {
-                return Err(format!(
-                    "Named feature not present in actual dataset! {}",
-                    name_or_num
-                ))?;
-            }
-        }
-
-        let num = name_or_num.parse::<u32>().map_err(|_| {
-            format!(
-                "Could not turn {} into a name or number in this dataset.",
-                name_or_num
-            )
-        })?;
-        if let Some(idx) = self.features.iter().position(|n| *n == num) {
-            self.features.swap_remove(idx);
-            return Ok(());
-        } else {
-            return Err(format!(
-                "Feature #{} not present in actual dataset!",
-                name_or_num
-            ))?;
-        }
+    pub fn try_remove_feature(&mut self, name_or_num: &str) -> Result<(), Box<Error>> {
+        let fid = self.try_lookup_feature(name_or_num)?;
+        self.features.swap_remove(fid.to_index());
+        Ok(())
     }
 }
 
@@ -496,19 +495,19 @@ impl RankingDataset for LoadedRankingDataset {
     fn get_ref(&self) -> DatasetRef {
         panic!("This is too expensive!")
     }
-    fn features(&self) -> Vec<u32> {
+    fn features(&self) -> Vec<FeatureId> {
         self.features.clone()
     }
     fn n_dim(&self) -> u32 {
         self.n_dim
     }
-    fn instances(&self) -> Vec<u32> {
-        (0..self.instances.len()).map(|i| i as u32).collect()
+    fn instances(&self) -> Vec<InstanceId> {
+        (0..self.instances.len()).map(|i| InstanceId::from_index(i)).collect()
     }
-    fn get_instance(&self, id: u32) -> &TrainingInstance {
-        &self.instances[id as usize]
+    fn get_instance(&self, id: InstanceId) -> &TrainingInstance {
+        &self.instances[id.to_index()]
     }
-    fn instances_by_query(&self) -> HashMap<String, Vec<u32>> {
+    fn instances_by_query(&self) -> HashMap<String, Vec<InstanceId>> {
         self.data_by_query.clone()
     }
     fn queries(&self) -> Vec<String> {
@@ -518,23 +517,23 @@ impl RankingDataset for LoadedRankingDataset {
             .cloned()
             .collect()
     }
-    fn feature_name(&self, fid: u32) -> String {
+    fn feature_name(&self, fid: FeatureId) -> String {
         self.feature_names
             .get(&fid)
             .cloned()
-            .unwrap_or(format!("{}", fid))
+            .unwrap_or(format!("{}", fid.to_index()))
     }
-    fn get_feature_value(&self, instance: u32, fid: u32) -> Option<f64> {
-        self.instances[instance as usize].features.get(fid)
+    fn get_feature_value(&self, instance: InstanceId, fid: FeatureId) -> Option<f64> {
+        self.instances[instance.to_index()].features.get(fid)
     }
-    fn try_lookup_feature(&self, name_or_num: &str) -> Result<u32, Box<Error>> {
+    fn try_lookup_feature(&self, name_or_num: &str) -> Result<FeatureId, Box<Error>> {
         if let Some((num, _)) = self
             .feature_names
             .iter()
             .find(|(_, v)| v.as_str() == name_or_num)
         {
             if let Some(idx) = self.features.iter().position(|n| n == num) {
-                return Ok(idx as u32);
+                return Ok(FeatureId::from_index(idx));
             } else {
                 return Err(format!(
                     "Named feature not present in actual dataset! {}",
@@ -543,14 +542,14 @@ impl RankingDataset for LoadedRankingDataset {
             }
         }
 
-        let num = name_or_num.parse::<u32>().map_err(|_| {
+        let num = name_or_num.parse::<usize>().map(|id| FeatureId::from_index(id)).map_err(|_| {
             format!(
                 "Could not turn {} into a name or number in this dataset.",
                 name_or_num
             )
         })?;
         if let Some(idx) = self.features.iter().position(|n| *n == num) {
-            return Ok(idx as u32);
+            return Ok(FeatureId::from_index(idx));
         } else {
             return Err(format!(
                 "Feature #{} not present in actual dataset!",

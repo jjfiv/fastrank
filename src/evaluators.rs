@@ -14,7 +14,7 @@ const NUM_BOOTSTRAP_SAMPLES: u32 = 200;
 pub struct RankedInstance {
     pub score: NotNan<f64>,
     pub gain: NotNan<f32>,
-    pub identifier: u32,
+    pub identifier: InstanceId,
 }
 
 impl PartialEq for RankedInstance {
@@ -50,8 +50,8 @@ impl Ord for RankedInstance {
 #[cfg(test)]
 mod test {
     use super::*;
-    fn ri(score: f64, gain: f32, id: u32) -> RankedInstance {
-        RankedInstance::new(NotNan::new(score).unwrap(), NotNan::new(gain).unwrap(), id)
+    fn ri(score: f64, gain: f32, id: usize) -> RankedInstance {
+        RankedInstance::new(NotNan::new(score).unwrap(), NotNan::new(gain).unwrap(), InstanceId::from_index(id))
     }
     #[test]
     fn test_rank_ties() {
@@ -68,14 +68,14 @@ mod test {
             vec![4, 3, 1, 2, 5],
             instances
                 .into_iter()
-                .map(|ri| ri.identifier)
+                .map(|ri| ri.identifier.to_index())
                 .collect::<Vec<_>>()
         );
     }
 }
 
 impl RankedInstance {
-    pub fn new(score: NotNan<f64>, gain: NotNan<f32>, identifier: u32) -> Self {
+    pub fn new(score: NotNan<f64>, gain: NotNan<f32>, identifier: InstanceId) -> Self {
         Self {
             score,
             gain,
@@ -112,7 +112,7 @@ impl SetEvaluator {
                 .bootstrap_eval(NUM_BOOTSTRAP_SAMPLES, model)
                 .summary();
             println!(
-                "\t{}: Mean={:.3} Percentiles=({:.3} {:.3} {:.3} {:.3} {:.3})",
+                "\t{}:\tMean={:.3}\tPercentiles=({:.3} {:.3} {:.3} {:.3} {:.3})",
                 evaluator.name(),
                 evaluator.evaluate_mean(model),
                 p5,

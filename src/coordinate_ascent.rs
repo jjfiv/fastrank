@@ -1,4 +1,4 @@
-use crate::dataset::{RankingDataset, Features};
+use crate::dataset::{RankingDataset, Features, FeatureId};
 use crate::evaluators::SetEvaluator;
 use crate::model::{Model, WeightedEnsemble};
 use crate::Scored;
@@ -51,24 +51,24 @@ impl DenseLinearRankingModel {
         }
     }
 
-    fn reset<R: Rng>(&mut self, init_random: bool, rand: &mut R, valid_features: &[u32]) {
+    fn reset<R: Rng>(&mut self, init_random: bool, rand: &mut R, valid_features: &[FeatureId]) {
         if init_random {
             for i in valid_features.iter() {
-                self.weights[*i as usize] = rand.gen_range(-1.0, 1.0);
+                self.weights[i.to_index()] = rand.gen_range(-1.0, 1.0);
             }
         } else {
             self.reset_uniform(valid_features);
         }
     }
 
-    fn reset_uniform(&mut self, valid_features: &[u32]) {
+    fn reset_uniform(&mut self, valid_features: &[FeatureId]) {
         let n_dim = self.weights.len();
         // Initialize to even weights:
         self.weights.clear();
         assert_eq!(0, self.weights.len());
         self.weights.resize(n_dim, 0.0);
         for i in valid_features.iter() {
-            self.weights[*i as usize] = 1.0 / (valid_features.len() as f64);
+            self.weights[i.to_index()] = 1.0 / (valid_features.len() as f64);
         }
         assert_eq!(n_dim, self.weights.len());
     }
@@ -96,7 +96,7 @@ impl DenseLinearRankingModel {
             }
             Features::Sparse32(arr) => {
                 for (idx, feature) in arr.iter().cloned() {
-                    output += f64::from(feature) * weights[idx as usize];
+                    output += f64::from(feature) * weights[idx.to_index()];
                 }
             }
         };
@@ -132,7 +132,7 @@ fn optimize_inner<R: Rng>(
 
     loop {
         // Get new order of features for this optimization pass.
-        let mut fids: Vec<u32> = data.features().clone();
+        let mut fids: Vec<FeatureId> = data.features().clone();
         fids.shuffle(&mut rand);
 
         if !quiet {
@@ -158,9 +158,8 @@ fn optimize_inner<R: Rng>(
                 }
 
                 let current_feature_name = data.feature_name(*current_feature);
-                let current_feature = *current_feature as usize;
 
-                let orig_weight = model.weights[current_feature];
+                let orig_weight = model.weights[current_feature.to_index()];
                 let mut total_step;
 
                 for dir in SIGN {
@@ -177,7 +176,7 @@ fn optimize_inner<R: Rng>(
 
                     for _ in 0..num_iter {
                         let w = orig_weight + total_step;
-                        model.weights[current_feature] = w;
+                        model.weights[current_feature.to_index()] = w;
                         let score = evaluator.evaluate_mean(&model);
 
                         if current_best.replace_if_better(score, model.clone()) {

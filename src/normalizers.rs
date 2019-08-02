@@ -1,4 +1,4 @@
-use crate::dataset::{FeatureStats, RankingDataset};
+use crate::dataset::{FeatureStats, RankingDataset, FeatureId};
 use ordered_float::NotNan;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -17,7 +17,7 @@ impl Normalizer {
             unkn => Err(format!("Unsupported Normalizer: {}", unkn))?,
         })
     }
-    pub fn normalize(&self, fid: u32, val: f32) -> f32 {
+    pub fn normalize(&self, fid: FeatureId, val: f32) -> f32 {
         match self {
             Normalizer::MaxMinNormalizer(fs) => {
                 if let Some(stats) = fs.feature_stats.get(&fid) {
@@ -64,7 +64,7 @@ impl Normalizer {
                     val.exp(),
                     -(val).exp(),
                     sigmoid(val),
-                    fid
+                    fid.to_index()
                 ),
             },
         }
