@@ -1,0 +1,24 @@
+[package]
+name = "cfastrank"
+version = "0.1.1"
+authors = ["John Foley <jjfoley@smith.edu>"]
+edition = "2018"
+description = "C API to FastRank Learning to Rank Library written in Rust."
+homepage = "https://github.com/jjfiv/fastrank"
+license = "MIT"
+
+[lib]
+name = "cfastrank"
+crate-type = ["cdylib"]
+
+[dependencies]
+libc = "0.2.60"
+serde = "1"
+serde_json = "1"
+
+[dependencies.fastrank]
+version = "*"
+path = "../fastrank"
+
+[build-dependencies]
+cbindgen = "0.5"

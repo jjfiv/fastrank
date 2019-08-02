@@ -24,7 +24,6 @@ pub mod stats;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[repr(transparent)]
-#[serde(transparent)]
 pub struct FeatureId(u32);
 
 impl FeatureId {
@@ -38,7 +37,6 @@ impl FeatureId {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[repr(transparent)]
-#[serde(transparent)]
 pub struct InstanceId(u32);
 impl InstanceId {
     pub fn from_index(idx: usize) -> Self {

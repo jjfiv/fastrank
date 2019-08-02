@@ -1,21 +1,10 @@
-[package]
-name = "fastrank"
-version = "0.1.0"
-authors = ["John Foley <jjfoley@smith.edu>"]
-edition = "2018"
+[workspace]
+# Recall: members are path names, not package names
+# Packages can be built in isolation with the flag -p
+# e.g., to build toybox-core (path "core"), run:
+# > cargo build -p toybox-core
+members = [
+  "fastrank",
+  "cfastrank",
+]
 
-[dependencies]
-rand = "0.7"
-rand_xoshiro = "0.3"
-bzip2 = "0.3"
-flate2 = "1.0"
-zstd = "0.4"
-clap = "1.0"
-rayon = "=1.1.0"
-serde = "1"
-serde_json = "1"
-serde_derive = "1"
-
-[dependencies.ordered-float]
-version = "1.0"
-features = ["serde"]

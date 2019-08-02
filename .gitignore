@@ -1,4 +1,8 @@
-/target
+/target/
+target
+venv
+*.pyc
+__pycache__
 **/*.rs.bk
 Cargo.lock
 /data
@@ -9,3 +13,11 @@ Cargo.lock
 /bg-*/
 /logs/
 *.model
+/pyfastrank/.eggs
+/pyfastrank/.pypi
+/pyfastrank/build/
+/pyfastrank/dist/
+*.egg-info
+*.so
+*.dll
+*.dylib
