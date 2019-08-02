@@ -19,19 +19,19 @@ pub struct CDataset {
 }
 
 #[no_mangle]
-pub extern "C" fn free_str(originally_from_rust: *mut c_char) {
-    let _will_drop: CString = unsafe { CString::from_raw(originally_from_rust) };
+pub extern "C" fn free_str(originally_from_rust: *mut c_void) {
+    let _will_drop: CString = unsafe { CString::from_raw(originally_from_rust as *mut c_char) };
 }
 
 #[no_mangle]
-pub extern "C" fn exec_json(json_cmd_str: *mut c_char) -> *const c_char {
-    let json_cmd_str: &CStr = unsafe { CStr::from_ptr(json_cmd_str) };
+pub extern "C" fn exec_json(json_cmd_str: *mut c_void) -> *const c_void {
+    let json_cmd_str: &CStr = unsafe { CStr::from_ptr(json_cmd_str as *mut c_char) };
     let output = match result_exec_json(json_cmd_str) {
         Ok(response) => response,
         Err(e) => format!("Error: {:?}", e),
     };
     let c_output: CString = CString::new(output).expect("Conversion to CString should succeed!");
-    CString::into_raw(c_output)
+    CString::into_raw(c_output) as *const c_void
 }
 
 fn result_exec_json(query_str: &CStr) -> Result<String, Box<Error>> {
