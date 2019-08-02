@@ -3,6 +3,7 @@ name = "fastrank"
 version = "0.1.0"
 authors = ["John Foley <jjfoley@smith.edu>"]
 edition = "2018"
+publish = false
 
 [dependencies]
 rand = "0.7"

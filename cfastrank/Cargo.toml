@@ -6,6 +6,7 @@ edition = "2018"
 description = "C API to FastRank Learning to Rank Library written in Rust."
 homepage = "https://github.com/jjfiv/fastrank"
 license = "MIT"
+publish = false
 
 [lib]
 name = "cfastrank"
