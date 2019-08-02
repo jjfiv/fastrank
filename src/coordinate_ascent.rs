@@ -1,6 +1,8 @@
-use crate::dataset::{RankingDataset, Features, FeatureId};
+use crate::dataset::RankingDataset;
 use crate::evaluators::SetEvaluator;
+use crate::instance::Features;
 use crate::model::{Model, WeightedEnsemble};
+use crate::FeatureId;
 use crate::Scored;
 use ordered_float::NotNan;
 use rand::prelude::*;

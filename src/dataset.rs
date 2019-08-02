@@ -1,286 +1,27 @@
+use crate::instance::TrainingInstance;
 use crate::io_helper;
 use crate::libsvm;
 use crate::normalizers::Normalizer;
-use crate::stats::{ComputedStats, StreamingStats};
-use ordered_float::NotNan;
-use rand::prelude::*;
-use std::cmp;
+use crate::{FeatureId, InstanceId};
 use std::collections::HashMap;
 use std::collections::HashSet;
 use std::error::Error;
 use std::f64;
 use std::sync::Arc;
 
-#[derive(Debug,Clone,Copy,PartialEq,Eq,PartialOrd,Ord,Hash,Serialize,Deserialize)]
-#[repr(transparent)]
-#[serde(transparent)]
-pub struct FeatureId(u32);
-
-impl FeatureId {
-    pub fn from_index(idx: usize) -> Self {
-        Self(idx as u32)
-    }
-    pub fn to_index(&self) -> usize {
-        self.0 as usize
-    }
-}
-
-#[derive(Debug,Clone,Copy,PartialEq,Eq,PartialOrd,Ord,Hash,Serialize,Deserialize)]
-#[repr(transparent)]
-#[serde(transparent)]
-pub struct InstanceId(u32);
-impl InstanceId {
-    pub fn from_index(idx: usize) -> Self {
-        Self(idx as u32)
-    }
-    pub fn to_index(&self) -> usize {
-        self.0 as usize
-    }
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct FeatureStats {
-    pub feature_stats: HashMap<FeatureId, ComputedStats>,
-}
-
-impl FeatureStats {
-    pub fn compute(dataset: &dyn RankingDataset) -> FeatureStats {
-        let mut stats_builders: HashMap<FeatureId, StreamingStats> = dataset
-            .features()
-            .iter()
-            .cloned()
-            .map(|fid| (fid, StreamingStats::new()))
-            .collect();
-
-        for inst in dataset.instances().iter().cloned() {
-            dataset
-                .get_instance(inst)
-                .features
-                .update_stats(&mut stats_builders);
-        }
-
-        FeatureStats {
-            feature_stats: stats_builders
-                .into_iter()
-                .flat_map(|(fid, stats)| stats.finish().map(|cs| (fid, cs)))
-                .collect(),
-        }
-    }
-}
-
-pub enum Features {
-    Dense32(Vec<f32>),
-    /// Sparse 32-bit representation; must be sorted!
-    Sparse32(Vec<(FeatureId, f32)>),
-}
-
-impl Features {
-    pub fn get(&self, idx: FeatureId) -> Option<f64> {
-        match self {
-            Features::Dense32(arr) => arr.get(idx.to_index()).map(|val| f64::from(*val)),
-            Features::Sparse32(features) => {
-                for (fidx, val) in features.iter() {
-                    if *fidx == idx {
-                        return Some(f64::from(*val));
-                    } else if *fidx > idx {
-                        break;
-                    }
-                }
-                None
-            }
-        }
-    }
-    pub fn ids(&self) -> Vec<FeatureId> {
-        let mut features: Vec<FeatureId> = Vec::new();
-        match self {
-            Features::Dense32(arr) => features.extend( (0..arr.len()).map(|idx| FeatureId::from_index(idx)) ),
-            Features::Sparse32(arr) => features.extend(arr.iter().map(|(idx, _)| *idx)),
-        }
-        features
-    }
-    pub fn update_stats(&self, per_feature_stats: &mut HashMap<FeatureId, StreamingStats>) {
-        for (fid, stats) in per_feature_stats.iter_mut() {
-            if let Some(x) = self.get(*fid) {
-                stats.push(x);
-            }
-            // Expliticly skip missing; so as not to make it part of normalization.
-        }
-    }
-    pub fn apply_normalization(&mut self, normalizer: &Normalizer) {
-        match self {
-            Features::Dense32(arr) => {
-                for (fid, val) in arr.iter_mut().enumerate() {
-                    *val = normalizer.normalize(FeatureId::from_index(fid), *val);
-                }
-            }
-            Features::Sparse32(arr) => {
-                for (fid, val) in arr.iter_mut() {
-                    *val = normalizer.normalize(*fid, *val);
-                }
-            }
-        }
-    }
-}
-
-pub struct TrainingInstance {
-    pub gain: NotNan<f32>,
-    pub qid: String,
-    pub features: Features,
-}
-
-impl TrainingInstance {
-    pub fn new(gain: NotNan<f32>, qid: String, features: Features) -> Self {
-        Self {
-            gain,
-            qid,
-            features,
-        }
-    }
-    pub fn try_new(libsvm: libsvm::Instance) -> Result<TrainingInstance, &'static str> {
-        // Convert features to dense representation if it's worthwhile.
-        let max_feature = libsvm.features.iter().map(|f| f.idx).max().unwrap_or(1);
-        let density = (libsvm.features.len() as f64) / (max_feature as f64);
-        let features = if density >= 0.5 {
-            let mut dense = vec![0_f32; (max_feature + 1) as usize];
-            for f in libsvm.features.iter() {
-                dense[f.idx as usize] = f.value;
-            }
-            Features::Dense32(dense)
-        } else {
-            Features::Sparse32(
-                libsvm
-                    .features
-                    .into_iter()
-                    .map(|f| (FeatureId::from_index(f.idx as usize), f.value))
-                    .collect(),
-            )
-        };
-
-        Ok(TrainingInstance {
-            gain: libsvm.label,
-            qid: libsvm.query.ok_or("Missing qid")?,
-            features,
-        })
-    }
-    pub fn is_relevant(&self) -> bool {
-        self.gain.into_inner() > 0.0
-    }
-    pub fn perceptron_label(&self) -> i32 {
-        if self.is_relevant() {
-            1
-        } else {
-            -1
-        }
-    }
-}
-
-pub fn load_feature_names_json(path: &str) -> Result<HashMap<FeatureId, String>, Box<std::error::Error>> {
+pub fn load_feature_names_json(
+    path: &str,
+) -> Result<HashMap<FeatureId, String>, Box<std::error::Error>> {
     let reader = io_helper::open_reader(path)?;
     let data: HashMap<String, String> = serde_json::from_reader(reader)?;
     let data: Result<HashMap<FeatureId, String>, _> = data
         .into_iter()
-        .map(|(k, v)| k.parse::<usize>().map(|num| (FeatureId::from_index(num), v)))
+        .map(|(k, v)| {
+            k.parse::<usize>()
+                .map(|num| (FeatureId::from_index(num), v))
+        })
         .collect();
     Ok(data?)
-}
-
-pub trait DatasetSampling {
-    /// Sample this dataset randomly to frate percent of features and srate percent of instances.
-    /// At least one feature and one instance is selected no matter how small the percentage.
-    fn random_sample<R: Rng>(&self, frate: f64, srate: f64, rand: &mut R) -> SampledDatasetRef;
-
-    /// This represents a deterministic sampling of instances.
-    fn with_instances(&self, instances: &[InstanceId]) -> SampledDatasetRef;
-
-    /// This represents a determinisitc sampling of queries.
-    fn with_queries(&self, queries: &[String]) -> SampledDatasetRef;
-
-    fn train_test<R: Rng>(
-        &self,
-        test_fraction: f64,
-        rand: &mut R,
-    ) -> (SampledDatasetRef, SampledDatasetRef);
-}
-
-impl DatasetSampling for &dyn RankingDataset {
-    fn random_sample<R: Rng>(&self, frate: f64, srate: f64, rand: &mut R) -> SampledDatasetRef {
-        let features = self.features();
-        let queries = self.queries();
-
-        let n_features = cmp::max(1, ((features.len() as f64) * frate) as usize);
-        let n_queries = cmp::max(1, ((queries.len() as f64) * srate) as usize);
-
-        let features = features
-            .choose_multiple(rand, n_features)
-            .cloned()
-            .collect();
-        let queries: HashSet<&str> = queries
-            .choose_multiple(rand, n_queries)
-            .map(|s| s.as_str())
-            .collect();
-        
-        let mut instances: Vec<InstanceId> = Vec::new();
-
-        for (qid, qinst) in self.instances_by_query() {
-            if queries.contains(qid.as_str()) {
-                instances.extend(qinst);
-            }
-        }
-
-        SampledDatasetRef {
-            parent: self.get_ref(),
-            features,
-            instances,
-        }
-    }
-    fn with_instances(&self, instances: &[InstanceId]) -> SampledDatasetRef {
-        SampledDatasetRef {
-            parent: self.get_ref(),
-            instances: instances.iter().cloned().collect(),
-            features: self.features(),
-        }
-    }
-
-    fn with_queries(&self, queries: &[String]) -> SampledDatasetRef {
-        let query_set: HashSet<&str> = queries.iter().map(|s| s.as_str()).collect();
-        let mut instances: Vec<InstanceId> = Vec::new();
-
-        for (qid, qinst) in self.instances_by_query() {
-            if query_set.contains(qid.as_str()) {
-                instances.extend(qinst);
-            }
-        }
-
-        SampledDatasetRef {
-            parent: self.get_ref(),
-            instances,
-            features: self.features(),
-        }
-    }
-
-    fn train_test<R: Rng>(
-        &self,
-        test_fraction: f64,
-        rand: &mut R,
-    ) -> (SampledDatasetRef, SampledDatasetRef) {
-        let mut qs = self.queries();
-        let n_test_qs = ((qs.len() as f64) * test_fraction) as usize;
-        if n_test_qs <= 0 {
-            panic!(
-                "Must be some testing data selected: frac={}!",
-                test_fraction
-            );
-        }
-        if n_test_qs >= qs.len() {
-            panic!("Must be some training data left!");
-        }
-
-        qs.shuffle(rand);
-        let test_qs = qs.split_off(n_test_qs);
-        let train_qs = qs;
-
-        (self.with_queries(&train_qs), self.with_queries(&test_qs))
-    }
 }
 
 pub trait RankingDataset: Send + Sync {
@@ -390,7 +131,8 @@ impl RankingDataset for SampledDatasetRef {
         } else {
             Err(format!(
                 "Feature not in subsample: {}: {}",
-                name_or_num, fid.to_index()
+                name_or_num,
+                fid.to_index()
             ))?
         }
     }
@@ -405,7 +147,10 @@ impl DatasetRef {
             data: Arc::new(LoadedRankingDataset::load_libsvm(path, feature_names)?),
         })
     }
-    pub fn new(data: Vec<TrainingInstance>, feature_names: Option<&HashMap<FeatureId, String>>) -> Self {
+    pub fn new(
+        data: Vec<TrainingInstance>,
+        feature_names: Option<&HashMap<FeatureId, String>>,
+    ) -> Self {
         DatasetRef {
             data: Arc::new(LoadedRankingDataset::new(data, feature_names)),
         }
@@ -439,7 +184,10 @@ impl LoadedRankingDataset {
         }
         Ok(Self::new(instances, feature_names))
     }
-    pub fn new(data: Vec<TrainingInstance>, feature_names: Option<&HashMap<FeatureId, String>>) -> Self {
+    pub fn new(
+        data: Vec<TrainingInstance>,
+        feature_names: Option<&HashMap<FeatureId, String>>,
+    ) -> Self {
         // Collect features that are actually present.
         let mut features: HashSet<FeatureId> = HashSet::new();
         // Collect training instances by the query.
@@ -502,7 +250,9 @@ impl RankingDataset for LoadedRankingDataset {
         self.n_dim
     }
     fn instances(&self) -> Vec<InstanceId> {
-        (0..self.instances.len()).map(|i| InstanceId::from_index(i)).collect()
+        (0..self.instances.len())
+            .map(|i| InstanceId::from_index(i))
+            .collect()
     }
     fn get_instance(&self, id: InstanceId) -> &TrainingInstance {
         &self.instances[id.to_index()]
@@ -542,12 +292,15 @@ impl RankingDataset for LoadedRankingDataset {
             }
         }
 
-        let num = name_or_num.parse::<usize>().map(|id| FeatureId::from_index(id)).map_err(|_| {
-            format!(
-                "Could not turn {} into a name or number in this dataset.",
-                name_or_num
-            )
-        })?;
+        let num = name_or_num
+            .parse::<usize>()
+            .map(|id| FeatureId::from_index(id))
+            .map_err(|_| {
+                format!(
+                    "Could not turn {} into a name or number in this dataset.",
+                    name_or_num
+                )
+            })?;
         if let Some(idx) = self.features.iter().position(|n| *n == num) {
             return Ok(FeatureId::from_index(idx));
         } else {

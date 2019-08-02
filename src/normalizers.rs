@@ -1,5 +1,38 @@
-use crate::dataset::{FeatureStats, RankingDataset, FeatureId};
+use crate::dataset::RankingDataset;
+use crate::stats::{ComputedStats, StreamingStats};
+use crate::FeatureId;
 use ordered_float::NotNan;
+use std::collections::HashMap;
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FeatureStats {
+    pub feature_stats: HashMap<FeatureId, ComputedStats>,
+}
+
+impl FeatureStats {
+    pub fn compute(dataset: &dyn RankingDataset) -> FeatureStats {
+        let mut stats_builders: HashMap<FeatureId, StreamingStats> = dataset
+            .features()
+            .iter()
+            .cloned()
+            .map(|fid| (fid, StreamingStats::new()))
+            .collect();
+
+        for inst in dataset.instances().iter().cloned() {
+            dataset
+                .get_instance(inst)
+                .features
+                .update_stats(&mut stats_builders);
+        }
+
+        FeatureStats {
+            feature_stats: stats_builders
+                .into_iter()
+                .flat_map(|(fid, stats)| stats.finish().map(|cs| (fid, cs)))
+                .collect(),
+        }
+    }
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum Normalizer {

@@ -2,6 +2,7 @@ use crate::dataset::*;
 use crate::model::Model;
 use crate::qrel::QuerySetJudgments;
 use crate::stats::PercentileStats;
+use crate::InstanceId;
 use ordered_float::NotNan;
 use rand::prelude::*;
 use std::cmp::Ordering;
@@ -51,7 +52,11 @@ impl Ord for RankedInstance {
 mod test {
     use super::*;
     fn ri(score: f64, gain: f32, id: usize) -> RankedInstance {
-        RankedInstance::new(NotNan::new(score).unwrap(), NotNan::new(gain).unwrap(), InstanceId::from_index(id))
+        RankedInstance::new(
+            NotNan::new(score).unwrap(),
+            NotNan::new(gain).unwrap(),
+            InstanceId::from_index(id),
+        )
     }
     #[test]
     fn test_rank_ties() {

@@ -1,9 +1,11 @@
 use clap::{App, Arg};
 use fastrank::dataset;
-use fastrank::dataset::{DatasetRef, RankingDataset, FeatureId};
+use fastrank::dataset::{DatasetRef, RankingDataset};
 use fastrank::evaluators::SetEvaluator;
+use fastrank::instance::Features;
 use fastrank::model::Model;
 use fastrank::qrel;
+use fastrank::FeatureId;
 use fastrank::Scored;
 use ordered_float::NotNan;
 use std::collections::HashSet;
@@ -16,7 +18,7 @@ pub struct SingleFeatureModel {
 }
 
 impl Model for SingleFeatureModel {
-    fn score(&self, features: &dataset::Features) -> NotNan<f64> {
+    fn score(&self, features: &Features) -> NotNan<f64> {
         let val = features.get(self.fid).unwrap_or(0.0);
         NotNan::new(self.dir * val).unwrap()
     }
@@ -128,7 +130,10 @@ fn main() -> Result<(), Box<Error>> {
         if !quiet {
             println!(
                 "{:3} | {:16} | {:4.0} | {:9.3}",
-                fid.to_index(), feature_name, best_by_dir.item.dir, best_by_dir.score
+                fid.to_index(),
+                feature_name,
+                best_by_dir.item.dir,
+                best_by_dir.score
             );
         }
 

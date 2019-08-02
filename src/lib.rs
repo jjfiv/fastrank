@@ -6,18 +6,48 @@ extern crate serde_derive;
 
 /// Contains code for feature-at-a-time non-differentiable optimization.
 pub mod coordinate_ascent;
-pub mod normalizers;
 pub mod dataset;
 pub mod evaluators;
+pub mod instance;
+/// Contains code for reading compressed files based on their extension.
 pub mod io_helper;
 /// Contains code for reading ranklib and libsvm input files.
 pub mod libsvm;
 pub mod model;
+pub mod normalizers;
 pub mod qrel;
+pub mod sampling;
 
 pub mod random_forest;
 /// Streaming computation of statistics.
 pub mod stats;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[repr(transparent)]
+#[serde(transparent)]
+pub struct FeatureId(u32);
+
+impl FeatureId {
+    pub fn from_index(idx: usize) -> Self {
+        Self(idx as u32)
+    }
+    pub fn to_index(&self) -> usize {
+        self.0 as usize
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[repr(transparent)]
+#[serde(transparent)]
+pub struct InstanceId(u32);
+impl InstanceId {
+    pub fn from_index(idx: usize) -> Self {
+        Self(idx as u32)
+    }
+    pub fn to_index(&self) -> usize {
+        self.0 as usize
+    }
+}
 
 #[derive(Clone, Debug)]
 pub struct Scored<T: Clone> {

@@ -1,8 +1,12 @@
-use crate::dataset::*;
+use crate::dataset::{RankingDataset, SampledDatasetRef};
 use crate::evaluators::SetEvaluator;
+use crate::instance::Features;
 use crate::model::{Model, WeightedEnsemble};
+use crate::normalizers::FeatureStats;
+use crate::sampling::DatasetSampling;
 use crate::stats;
 use crate::Scored;
+use crate::{FeatureId, InstanceId};
 use ordered_float::NotNan;
 use rand::prelude::*;
 use rand_xoshiro::rand_core::SeedableRng;
@@ -479,6 +483,8 @@ fn learn_recursive(
 #[cfg(test)]
 mod test {
     use super::*;
+    use crate::dataset::DatasetRef;
+    use crate::instance::TrainingInstance;
 
     fn single_feature(x: f32) -> Features {
         Features::Dense32(vec![x])

@@ -128,7 +128,7 @@ fn main() -> Result<(), Box<Error>> {
     )?;
     let model = params.learn(&train_dataset, &evaluator);
     println!("MODEL {:?}", model);
-    
+
     // Print train and test evaluations:
     SetEvaluator::print_standard_eval("Train", model.as_ref(), &train_dataset, &judgments);
     if let Some(test_dataset) = test_dataset {
