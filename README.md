@@ -14,7 +14,7 @@ pip install fastrank
 
 The core algorithms and data structures are implemented in Rust.
 
-### cfastrank
+### cfastrank [![PyPI version](https://badge.fury.io/py/cfastrank.svg)](https://badge.fury.io/py/cfastrank)
 
 A very thin layer of rust code provides a C-compatible API. A manylinux version is published to pypi.
 
