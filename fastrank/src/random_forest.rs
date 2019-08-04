@@ -1,6 +1,6 @@
 use crate::dataset::{RankingDataset, SampledDatasetRef};
 use crate::evaluators::SetEvaluator;
-use crate::model::{TreeNode, ModelEnum, WeightedEnsemble};
+use crate::model::{ModelEnum, TreeNode, WeightedEnsemble};
 use crate::normalizers::FeatureStats;
 use crate::sampling::DatasetSampling;
 use crate::stats;
@@ -36,11 +36,7 @@ fn compute_output(ids: &[InstanceId], dataset: &dyn RankingDataset) -> NotNan<f6
         return NotNan::new(0.0).unwrap();
     }
     let mut gain_sum = 0.0;
-    for gain in ids
-        .iter()
-        .cloned()
-        .map(|index| dataset.gain(index))
-    {
+    for gain in ids.iter().cloned().map(|index| dataset.gain(index)) {
         gain_sum += gain.into_inner() as f64;
     }
     NotNan::new(gain_sum / (ids.len() as f64)).expect("Leaf output NaN.")
@@ -49,11 +45,7 @@ fn squared_error(ids: &[InstanceId], dataset: &dyn RankingDataset) -> NotNan<f64
     let output = compute_output(ids, dataset);
 
     let mut sum_sq_errors = 0.0;
-    for gain in ids
-        .iter()
-        .cloned()
-        .map(|index| dataset.gain(index))
-    {
+    for gain in ids.iter().cloned().map(|index| dataset.gain(index)) {
         let diff = output - f64::from(gain.into_inner());
         sum_sq_errors += (diff * diff).into_inner();
     }
@@ -174,7 +166,6 @@ impl TreeNode {
         }
     }
 }
-
 
 struct RecursionParams {
     current_depth: u32,
@@ -423,7 +414,7 @@ fn learn_recursive(
 mod test {
     use super::*;
     use crate::dataset::DatasetRef;
-    use crate::instance::{Instance, Features};
+    use crate::instance::{Features, Instance};
 
     fn single_feature(x: f32) -> Features {
         Features::Dense32(vec![x])
@@ -469,7 +460,9 @@ mod test {
             assert_float_eq(
                 &format!(
                     "x={}",
-                    dataset.get_feature_value(inst, FeatureId::from_index(0)).unwrap()
+                    dataset
+                        .get_feature_value(inst, FeatureId::from_index(0))
+                        .unwrap()
                 ),
                 *py,
                 dataset.gain(inst).into_inner().into(),

@@ -1,12 +1,12 @@
-use std::collections::HashMap;
-use ordered_float::NotNan;
-use crate::dataset::{RankingDataset, DatasetRef};
-use crate::{FeatureId, InstanceId};
-use crate::instance::{FeatureRead};
-use std::sync::Arc;
+use crate::dataset::{DatasetRef, RankingDataset};
+use crate::instance::FeatureRead;
 use crate::model::Model;
-use std::error::Error;
+use crate::{FeatureId, InstanceId};
+use ordered_float::NotNan;
+use std::collections::HashMap;
 use std::convert::TryFrom;
+use std::error::Error;
+use std::sync::Arc;
 
 #[derive(Debug, Clone)]
 pub struct DenseDataset {
@@ -22,31 +22,40 @@ pub struct DenseDataset {
 impl DenseDataset {
     pub fn into_ref(self) -> DatasetRef {
         DatasetRef {
-            data: Arc::new(self)
+            data: Arc::new(self),
         }
     }
-    pub fn try_new(n_instances: usize, n_features: usize, xs: &'static [f32], ys: &'static [f64], qids: &'static [i64]) -> Result<DenseDataset, Box<Error>> {
+    pub fn try_new(
+        n_instances: usize,
+        n_features: usize,
+        xs: &'static [f32],
+        ys: &'static [f64],
+        qids: &'static [i64],
+    ) -> Result<DenseDataset, Box<Error>> {
         let mut qid_nos = Vec::new();
         let mut qid_strings = HashMap::new();
 
         for qid in qids.iter().cloned() {
             let qid_no = u32::try_from(qid)?;
-            qid_strings.entry(qid_no).or_insert_with(|| format!("{}", qid_no));
+            qid_strings
+                .entry(qid_no)
+                .or_insert_with(|| format!("{}", qid_no));
             qid_nos.push(qid_no);
         }
 
+        println!("DenseDataset N={} D={}", n_instances, n_features);
+
         Ok(DenseDataset {
-            n_features,
             n_instances,
+            n_features,
             xs,
             ys,
             qids: qid_nos,
             qid_strings,
-            feature_names: HashMap::new()
+            feature_names: HashMap::new(),
         })
     }
 }
-
 
 struct DenseDatasetInstance<'dataset> {
     dataset: &'dataset DenseDataset,
@@ -74,33 +83,45 @@ impl RankingDataset for DenseDataset {
         panic!("Use into_ref() instead!")
     }
     fn features(&self) -> Vec<FeatureId> {
-        (0..self.n_features).map(|i| FeatureId::from_index(i)).collect()
+        (0..self.n_features)
+            .map(|i| FeatureId::from_index(i))
+            .collect()
     }
     fn n_dim(&self) -> u32 {
-        self.n_instances as u32
+        self.n_features as u32
     }
     fn instances(&self) -> Vec<InstanceId> {
-        (0..self.n_instances).map(|i| InstanceId::from_index(i)).collect()
+        (0..self.n_instances)
+            .map(|i| InstanceId::from_index(i))
+            .collect()
     }
     fn instances_by_query(&self) -> HashMap<String, Vec<InstanceId>> {
         let mut ref_map = HashMap::<&str, Vec<InstanceId>>::new();
         for (i, qid_no) in self.qids.iter().enumerate() {
             let qid_str = &self.qid_strings[qid_no];
-            ref_map.entry(qid_str.as_str()).or_default().push(InstanceId::from_index(i));
+            ref_map
+                .entry(qid_str.as_str())
+                .or_default()
+                .push(InstanceId::from_index(i));
         }
-        ref_map.into_iter().map(|(k,v)| (k.to_string(), v)).collect()
+        ref_map
+            .into_iter()
+            .map(|(k, v)| (k.to_string(), v))
+            .collect()
     }
     fn score(&self, id: InstanceId, model: &Model) -> NotNan<f64> {
-        let instance = DenseDatasetInstance {
-            id,
-            dataset: self
-        };
+        let instance = DenseDatasetInstance { id, dataset: self };
         model.score(&instance)
     }
     fn gain(&self, id: InstanceId) -> NotNan<f32> {
         let index = id.to_index();
-        let y = self.ys.get(index).expect("only valid TrainingInstances should exist");
-        NotNan::new(*y as f32).map_err(|_| format!("NaN in ys[{}]", index)).unwrap()
+        let y = self
+            .ys
+            .get(index)
+            .expect("only valid TrainingInstances should exist");
+        NotNan::new(*y as f32)
+            .map_err(|_| format!("NaN in ys[{}]", index))
+            .unwrap()
     }
     fn query_id(&self, id: InstanceId) -> &str {
         let qid_no = self.qids[id.to_index()];

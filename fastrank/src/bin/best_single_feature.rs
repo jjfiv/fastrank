@@ -2,7 +2,7 @@ use clap::{App, Arg};
 use fastrank::dataset;
 use fastrank::dataset::{DatasetRef, RankingDataset};
 use fastrank::evaluators::SetEvaluator;
-use fastrank::model::{SingleFeatureModel};
+use fastrank::model::SingleFeatureModel;
 use fastrank::qrel;
 use fastrank::FeatureId;
 use fastrank::Scored;

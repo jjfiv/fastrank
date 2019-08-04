@@ -1,15 +1,15 @@
-use crate::instance::{Instance, FeatureRead};
-use crate::model::Model;
+use crate::instance::{FeatureRead, Instance};
 use crate::io_helper;
 use crate::libsvm;
+use crate::model::Model;
 use crate::normalizers::Normalizer;
 use crate::{FeatureId, InstanceId};
+use ordered_float::NotNan;
 use std::collections::HashMap;
 use std::collections::HashSet;
 use std::error::Error;
 use std::f64;
 use std::sync::Arc;
-use ordered_float::NotNan;
 
 pub fn load_feature_names_json(
     path: &str,
@@ -299,7 +299,11 @@ impl RankingDataset for LoadedRankingDataset {
     }
 }
 
-pub fn try_lookup_feature(dataset: &RankingDataset, feature_names: &HashMap<FeatureId, String>, name_or_num: &str) -> Result<FeatureId, Box<Error>> {
+pub fn try_lookup_feature(
+    dataset: &RankingDataset,
+    feature_names: &HashMap<FeatureId, String>,
+    name_or_num: &str,
+) -> Result<FeatureId, Box<Error>> {
     let features = dataset.features();
     if let Some((num, _)) = feature_names
         .iter()

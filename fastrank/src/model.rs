@@ -2,18 +2,18 @@ use crate::instance::FeatureRead;
 use crate::{FeatureId, Scored};
 
 use ordered_float::NotNan;
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
 
 pub trait Model: std::fmt::Debug {
     fn score(&self, features: &FeatureRead) -> NotNan<f64>;
 }
 
-#[derive(Debug,Clone,Serialize,Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum ModelEnum {
     SingleFeature(SingleFeatureModel),
     Linear(DenseLinearRankingModel),
     DecisionTree(TreeNode),
-    Ensemble(WeightedEnsemble)
+    Ensemble(WeightedEnsemble),
 }
 
 impl Model for ModelEnum {
@@ -47,10 +47,7 @@ pub struct DenseLinearRankingModel {
 
 impl Model for DenseLinearRankingModel {
     fn score(&self, features: &FeatureRead) -> NotNan<f64> {
-        NotNan::new(
-        features.dotp(&self.weights)
-
-        ).expect("Model.predict -> NaN")
+        NotNan::new(features.dotp(&self.weights)).expect("Model.predict -> NaN")
     }
 }
 
