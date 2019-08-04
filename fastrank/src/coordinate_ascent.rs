@@ -1,7 +1,6 @@
 use crate::dataset::RankingDataset;
 use crate::evaluators::SetEvaluator;
-use crate::instance::Features;
-use crate::model::{Model, WeightedEnsemble};
+use crate::model::{DenseLinearRankingModel, ModelEnum, WeightedEnsemble};
 use crate::FeatureId;
 use crate::Scored;
 use ordered_float::NotNan;
@@ -9,9 +8,8 @@ use rand::prelude::*;
 use rand_xoshiro::rand_core::SeedableRng;
 use rand_xoshiro::Xoshiro256StarStar;
 use rayon::prelude::*;
-use std::sync::Arc;
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct CoordinateAscentParams {
     pub num_restarts: u32,
     pub num_max_iterations: u32,
@@ -42,10 +40,6 @@ impl Default for CoordinateAscentParams {
     }
 }
 
-#[derive(Debug, Clone)]
-pub struct DenseLinearRankingModel {
-    weights: Vec<f64>,
-}
 impl DenseLinearRankingModel {
     fn new(n_dim: u32) -> Self {
         Self {
@@ -85,30 +79,6 @@ impl DenseLinearRankingModel {
                 *w /= sum;
             }
         }
-    }
-
-    fn predict(&self, features: &Features) -> f64 {
-        let mut output = 0.0;
-        let weights = &self.weights;
-        match features {
-            Features::Dense32(arr) => {
-                for (feature, weight) in arr.iter().cloned().zip(weights.iter().cloned()) {
-                    output += f64::from(feature) * weight;
-                }
-            }
-            Features::Sparse32(arr) => {
-                for (idx, feature) in arr.iter().cloned() {
-                    output += f64::from(feature) * weights[idx.to_index()];
-                }
-            }
-        };
-        output
-    }
-}
-
-impl Model for DenseLinearRankingModel {
-    fn score(&self, features: &Features) -> NotNan<f64> {
-        NotNan::new(self.predict(features)).expect("Model.predict -> NaN")
     }
 }
 
@@ -219,7 +189,7 @@ fn optimize_inner<R: Rng>(
 }
 
 impl CoordinateAscentParams {
-    pub fn learn(&self, data: &dyn RankingDataset, evaluator: &SetEvaluator) -> Box<Model> {
+    pub fn learn(&self, data: &dyn RankingDataset, evaluator: &SetEvaluator) -> ModelEnum {
         let mut rand = Xoshiro256StarStar::seed_from_u64(self.seed);
 
         if !self.quiet {
@@ -255,18 +225,18 @@ impl CoordinateAscentParams {
         }
 
         if self.output_ensemble && history.len() > 1 {
-            let members: Vec<Scored<Arc<dyn Model>>> = history
+            let members: Vec<Scored<ModelEnum>> = history
                 .iter()
                 .map(|sm| {
                     let mut model = sm.item.clone();
                     model.l1_normalize();
-                    let m: Arc<dyn Model> = Arc::new(model);
+                    let m = ModelEnum::Linear(model);
                     Scored::new(sm.score.into_inner(), m)
                 })
                 .collect();
-            Box::new(WeightedEnsemble::new(members))
+            ModelEnum::Ensemble(WeightedEnsemble::new(members))
         } else {
-            Box::new(
+            ModelEnum::Linear(
                 history
                     .iter()
                     .max()

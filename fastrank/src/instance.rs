@@ -1,9 +1,7 @@
 use crate::libsvm;
 use crate::normalizers::Normalizer;
-use crate::stats::StreamingStats;
 use crate::FeatureId;
 use ordered_float::NotNan;
-use std::collections::HashMap;
 
 pub enum Features {
     Dense32(Vec<f32>),
@@ -12,21 +10,6 @@ pub enum Features {
 }
 
 impl Features {
-    pub fn get(&self, idx: FeatureId) -> Option<f64> {
-        match self {
-            Features::Dense32(arr) => arr.get(idx.to_index()).map(|val| f64::from(*val)),
-            Features::Sparse32(features) => {
-                for (fidx, val) in features.iter() {
-                    if *fidx == idx {
-                        return Some(f64::from(*val));
-                    } else if *fidx > idx {
-                        break;
-                    }
-                }
-                None
-            }
-        }
-    }
     pub fn ids(&self) -> Vec<FeatureId> {
         let mut features: Vec<FeatureId> = Vec::new();
         match self {
@@ -36,14 +19,6 @@ impl Features {
             Features::Sparse32(arr) => features.extend(arr.iter().map(|(idx, _)| *idx)),
         }
         features
-    }
-    pub fn update_stats(&self, per_feature_stats: &mut HashMap<FeatureId, StreamingStats>) {
-        for (fid, stats) in per_feature_stats.iter_mut() {
-            if let Some(x) = self.get(*fid) {
-                stats.push(x);
-            }
-            // Expliticly skip missing; so as not to make it part of normalization.
-        }
     }
     pub fn apply_normalization(&mut self, normalizer: &Normalizer) {
         match self {
@@ -61,10 +36,15 @@ impl Features {
     }
 }
 
+pub trait FeatureRead {
+    fn get(&self, idx: FeatureId) -> Option<f64>;
+    /// Note: assumes zero as missing.
+    fn dotp(&self, weights: &[f64]) -> f64;
+}
+
 pub trait TrainingInstance: Send + Sync {
     fn gain(&self) -> NotNan<f32>;
     fn qid(&self) -> &str;
-    fn features(&self) -> &Features;
 }
 
 pub trait Relevance {
@@ -90,15 +70,55 @@ pub struct Instance {
     pub features: Features,
 }
 
+impl FeatureRead for Instance {
+    fn get(&self, idx: FeatureId) -> Option<f64> {
+        self.features.get(idx)
+    }
+    fn dotp(&self, weights: &[f64]) -> f64 {
+        self.features.dotp(weights)
+    }
+}
+
+impl FeatureRead for Features {
+    fn get(&self, idx: FeatureId) -> Option<f64> {
+        match self {
+            Features::Dense32(arr) => arr.get(idx.to_index()).map(|val| f64::from(*val)),
+            Features::Sparse32(features) => {
+                for (fidx, val) in features.iter() {
+                    if *fidx == idx {
+                        return Some(f64::from(*val));
+                    } else if *fidx > idx {
+                        break;
+                    }
+                }
+                None
+            }
+        }
+    }
+    fn dotp(&self, weights: &[f64]) -> f64 {
+        let mut output = 0.0;
+        match self {
+            Features::Dense32(arr) => {
+                for (feature, weight) in arr.iter().cloned().zip(weights.iter().cloned()) {
+                    output += f64::from(feature) * weight;
+                }
+            }
+            Features::Sparse32(arr) => {
+                for (idx, feature) in arr.iter().cloned() {
+                    output += f64::from(feature) * weights[idx.to_index()];
+                }
+            }
+        };
+        output
+    }
+}
+
 impl TrainingInstance for Instance {
     fn gain(&self) -> NotNan<f32> {
         self.gain.clone()
     }
     fn qid(&self) -> &str {
         self.qid.as_str()
-    }
-    fn features(&self) -> &Features {
-        &self.features
     }
 }
 

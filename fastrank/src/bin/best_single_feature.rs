@@ -2,27 +2,12 @@ use clap::{App, Arg};
 use fastrank::dataset;
 use fastrank::dataset::{DatasetRef, RankingDataset};
 use fastrank::evaluators::SetEvaluator;
-use fastrank::instance::Features;
-use fastrank::model::Model;
+use fastrank::model::{SingleFeatureModel};
 use fastrank::qrel;
 use fastrank::FeatureId;
 use fastrank::Scored;
-use ordered_float::NotNan;
 use std::collections::HashSet;
 use std::error::Error;
-
-#[derive(Debug, Clone, Copy)]
-pub struct SingleFeatureModel {
-    fid: FeatureId,
-    dir: f64,
-}
-
-impl Model for SingleFeatureModel {
-    fn score(&self, features: &Features) -> NotNan<f64> {
-        let val = features.get(self.fid).unwrap_or(0.0);
-        NotNan::new(self.dir * val).unwrap()
-    }
-}
 
 fn main() -> Result<(), Box<Error>> {
     let matches = App::new("best_single_feature")

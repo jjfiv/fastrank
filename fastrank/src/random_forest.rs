@@ -1,7 +1,6 @@
 use crate::dataset::{RankingDataset, SampledDatasetRef};
 use crate::evaluators::SetEvaluator;
-use crate::instance::{Features, Relevance};
-use crate::model::{Model, WeightedEnsemble};
+use crate::model::{TreeNode, ModelEnum, WeightedEnsemble};
 use crate::normalizers::FeatureStats;
 use crate::sampling::DatasetSampling;
 use crate::stats;
@@ -13,7 +12,6 @@ use rand_xoshiro::rand_core::SeedableRng;
 use rand_xoshiro::Xoshiro256StarStar;
 use rayon::prelude::*;
 use std::cmp;
-use std::sync::Arc;
 
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum SplitSelectionStrategy {
@@ -29,7 +27,7 @@ pub fn label_stats(
 ) -> Option<stats::ComputedStats> {
     let mut label_stats = stats::StreamingStats::new();
     for index in instances.iter().cloned() {
-        label_stats.push(dataset.get_instance(index).gain().into_inner() as f64);
+        label_stats.push(dataset.gain(index).into_inner() as f64);
     }
     label_stats.finish()
 }
@@ -41,7 +39,7 @@ fn compute_output(ids: &[InstanceId], dataset: &dyn RankingDataset) -> NotNan<f6
     for gain in ids
         .iter()
         .cloned()
-        .map(|index| dataset.get_instance(index).gain())
+        .map(|index| dataset.gain(index))
     {
         gain_sum += gain.into_inner() as f64;
     }
@@ -54,7 +52,7 @@ fn squared_error(ids: &[InstanceId], dataset: &dyn RankingDataset) -> NotNan<f64
     for gain in ids
         .iter()
         .cloned()
-        .map(|index| dataset.get_instance(index).gain())
+        .map(|index| dataset.gain(index))
     {
         let diff = output - f64::from(gain.into_inner());
         sum_sq_errors += (diff * diff).into_inner();
@@ -69,7 +67,7 @@ fn gini_impurity(ids: &[InstanceId], dataset: &RankingDataset) -> NotNan<f64> {
     let positive = ids
         .iter()
         .cloned()
-        .filter(|index| dataset.get_instance(*index).is_relevant())
+        .filter(|index| dataset.gain(*index).into_inner() > 0.0)
         .count();
     let p_yes = (positive as f64) / count;
     let p_no = (count - (positive as f64)) / count;
@@ -91,7 +89,7 @@ fn entropy(ids: &[InstanceId], dataset: &RankingDataset) -> NotNan<f64> {
     let positive = ids
         .iter()
         .cloned()
-        .filter(|index| dataset.get_instance(*index).is_relevant())
+        .filter(|index| dataset.gain(*index).into_inner() > 0.0)
         .count();
     let p_yes = (positive as f64) / count;
     let p_no = (count - (positive as f64)) / count;
@@ -168,17 +166,6 @@ impl Default for RandomForestParams {
     }
 }
 
-#[derive(Clone, Debug, Deserialize, Serialize)]
-pub enum TreeNode {
-    FeatureSplit {
-        fid: FeatureId,
-        split: NotNan<f64>,
-        lhs: Box<TreeNode>,
-        rhs: Box<TreeNode>,
-    },
-    LeafNode(NotNan<f64>),
-}
-
 impl TreeNode {
     fn depth(&self) -> u32 {
         match self {
@@ -188,27 +175,6 @@ impl TreeNode {
     }
 }
 
-impl Model for TreeNode {
-    fn score(&self, features: &Features) -> NotNan<f64> {
-        match self {
-            TreeNode::LeafNode(score) => score.clone(),
-            TreeNode::FeatureSplit {
-                fid,
-                split,
-                lhs,
-                rhs,
-            } => {
-                let fval =
-                    NotNan::new(features.get(*fid).unwrap_or(0.0)).expect("NaN in feature eval...");
-                if fval <= *split {
-                    lhs.score(features)
-                } else {
-                    rhs.score(features)
-                }
-            }
-        }
-    }
-}
 
 struct RecursionParams {
     current_depth: u32,
@@ -370,7 +336,7 @@ pub fn learn_ensemble(
         trees
             .into_iter()
             .map(|tree| {
-                let m: Arc<dyn Model> = Arc::new(tree.item);
+                let m = ModelEnum::DecisionTree(tree.item);
                 Scored::new(
                     if params.weight_trees {
                         tree.score.into_inner()
@@ -457,7 +423,7 @@ fn learn_recursive(
 mod test {
     use super::*;
     use crate::dataset::DatasetRef;
-    use crate::instance::Instance;
+    use crate::instance::{Instance, Features};
 
     fn single_feature(x: f32) -> Features {
         Features::Dense32(vec![x])
@@ -499,15 +465,14 @@ mod test {
 
         eprintln!("{:?}", tree);
         for inst in dataset.instances() {
-            let inst = dataset.get_instance(inst);
-            let py = tree.score(inst.features());
+            let py = dataset.score(inst, &tree);
             assert_float_eq(
                 &format!(
                     "x={}",
-                    inst.features().get(FeatureId::from_index(0)).unwrap()
+                    dataset.get_feature_value(inst, FeatureId::from_index(0)).unwrap()
                 ),
                 *py,
-                inst.gain().into_inner().into(),
+                dataset.gain(inst).into_inner().into(),
             );
         }
     }

@@ -130,9 +130,9 @@ fn main() -> Result<(), Box<Error>> {
     println!("MODEL {:?}", model);
 
     // Print train and test evaluations:
-    SetEvaluator::print_standard_eval("Train", model.as_ref(), &train_dataset, &judgments);
+    SetEvaluator::print_standard_eval("Train", &model, &train_dataset, &judgments);
     if let Some(test_dataset) = test_dataset {
-        SetEvaluator::print_standard_eval("Test", model.as_ref(), &test_dataset, &judgments);
+        SetEvaluator::print_standard_eval("Test", &model, &test_dataset, &judgments);
     }
 
     Ok(())

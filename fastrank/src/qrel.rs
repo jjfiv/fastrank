@@ -3,7 +3,7 @@ use ordered_float::NotNan;
 use std::collections::HashMap;
 use std::sync::Arc;
 
-#[derive(Clone)]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct QueryJudgments {
     docid_to_rel: Arc<HashMap<String, NotNan<f32>>>,
 }
@@ -39,7 +39,7 @@ impl QueryJudgments {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct QuerySetJudgments {
     query_to_judgments: Arc<HashMap<String, QueryJudgments>>,
 }

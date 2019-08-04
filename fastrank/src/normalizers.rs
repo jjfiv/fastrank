@@ -19,10 +19,12 @@ impl FeatureStats {
             .collect();
 
         for inst in dataset.instances().iter().cloned() {
-            dataset
-                .get_instance(inst)
-                .features()
-                .update_stats(&mut stats_builders);
+            for (fid, stats) in stats_builders.iter_mut() {
+                if let Some(fval) = dataset.get_feature_value(inst, *fid) {
+                    stats.push(fval)
+                }
+                // Explicitly skip missing; so as not to make it part of normalization.
+            }
         }
 
         FeatureStats {

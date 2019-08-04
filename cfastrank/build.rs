@@ -8,6 +8,6 @@ fn main() {
     let mut config: cbindgen::Config = Default::default();
     config.language = cbindgen::Language::C;
     cbindgen::generate_with_config(&crate_dir, config)
-        .unwrap()
+        .expect("Cbindgen::error")
         .write_to_file("../target/cfastrank.h");
 }

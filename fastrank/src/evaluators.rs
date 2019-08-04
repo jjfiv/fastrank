@@ -1,5 +1,4 @@
 use crate::dataset::{DatasetRef, RankingDataset};
-use crate::instance::Relevance;
 use crate::model::Model;
 use crate::qrel::QuerySetJudgments;
 use crate::stats::PercentileStats;
@@ -192,8 +191,9 @@ impl SetEvaluator {
                 .iter()
                 .cloned()
                 .map(|index| {
-                    let instance = &self.dataset.get_instance(index);
-                    RankedInstance::new(model.score(instance.features()), instance.gain(), index)
+                    let score = self.dataset.score(index, model);
+                    let gain = self.dataset.gain(index);
+                    RankedInstance::new(score, gain, index)
                 })
                 .collect();
             // Sort largest to smallest:
@@ -299,7 +299,7 @@ impl NDCG {
             let ideal_gains: Vec<NotNan<f32>> = all_gains.unwrap_or_else(|| {
                 instance_ids
                     .iter()
-                    .map(|index| dataset.get_instance(*index).gain())
+                    .map(|index| dataset.gain(*index))
                     .collect()
             });
             // Insert ideal if available:
@@ -376,7 +376,7 @@ impl AveragePrecision {
             let num_relevant: u32 = param_num_relevant.unwrap_or_else(|| {
                 instance_ids
                     .iter()
-                    .filter(|index| dataset.get_instance(**index).is_relevant())
+                    .filter(|index| dataset.gain(**index).into_inner() > 0.0)
                     .count() as u32
             });
 

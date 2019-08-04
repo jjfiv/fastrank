@@ -1,4 +1,5 @@
-use crate::instance::{Instance, TrainingInstance};
+use crate::instance::{Instance, FeatureRead};
+use crate::model::Model;
 use crate::io_helper;
 use crate::libsvm;
 use crate::normalizers::Normalizer;
@@ -8,6 +9,7 @@ use std::collections::HashSet;
 use std::error::Error;
 use std::f64;
 use std::sync::Arc;
+use ordered_float::NotNan;
 
 pub fn load_feature_names_json(
     path: &str,
@@ -29,8 +31,12 @@ pub trait RankingDataset: Send + Sync {
     fn features(&self) -> Vec<FeatureId>;
     fn n_dim(&self) -> u32;
     fn instances(&self) -> Vec<InstanceId>;
-    fn get_instance(&self, id: InstanceId) -> &TrainingInstance;
     fn instances_by_query(&self) -> HashMap<String, Vec<InstanceId>>;
+
+    fn score(&self, id: InstanceId, model: &Model) -> NotNan<f64>;
+    fn gain(&self, id: InstanceId) -> NotNan<f32>;
+    fn query_id(&self, id: InstanceId) -> &str;
+
     fn queries(&self) -> Vec<String>;
     /// For printing, the name if available or the number.
     fn feature_name(&self, fid: FeatureId) -> String;
@@ -43,7 +49,7 @@ pub trait RankingDataset: Send + Sync {
 /// This is an Arc wrapper around a LoadedRankingDataset, for cheaper copies.
 #[derive(Clone)]
 pub struct DatasetRef {
-    pub data: Arc<LoadedRankingDataset>,
+    pub data: Arc<dyn RankingDataset>,
 }
 /// Just proxy these requests to the inner (expensive-copy) implementation.
 impl RankingDataset for DatasetRef {
@@ -59,8 +65,14 @@ impl RankingDataset for DatasetRef {
     fn instances(&self) -> Vec<InstanceId> {
         self.data.instances()
     }
-    fn get_instance(&self, id: InstanceId) -> &TrainingInstance {
-        self.data.get_instance(id)
+    fn score(&self, id: InstanceId, model: &Model) -> NotNan<f64> {
+        self.data.score(id, model)
+    }
+    fn gain(&self, id: InstanceId) -> NotNan<f32> {
+        self.data.gain(id)
+    }
+    fn query_id(&self, id: InstanceId) -> &str {
+        self.data.query_id(id)
     }
     fn instances_by_query(&self) -> HashMap<String, Vec<InstanceId>> {
         self.data.instances_by_query()
@@ -99,22 +111,28 @@ impl RankingDataset for SampledDatasetRef {
     fn instances(&self) -> Vec<InstanceId> {
         self.instances.clone()
     }
-    fn get_instance(&self, id: InstanceId) -> &TrainingInstance {
-        self.parent.get_instance(id)
-    }
     fn instances_by_query(&self) -> HashMap<String, Vec<InstanceId>> {
         let mut out = HashMap::new();
         for id in self.instances.iter().cloned() {
-            out.entry(self.parent.get_instance(id).qid().to_owned())
+            out.entry(self.parent.query_id(id).to_owned())
                 .or_insert(Vec::new())
                 .push(id);
         }
         out
     }
+    fn score(&self, id: InstanceId, model: &Model) -> NotNan<f64> {
+        self.parent.score(id, model)
+    }
+    fn gain(&self, id: InstanceId) -> NotNan<f32> {
+        self.parent.gain(id)
+    }
+    fn query_id(&self, id: InstanceId) -> &str {
+        self.parent.query_id(id)
+    }
     fn queries(&self) -> Vec<String> {
         let mut out: HashSet<&str> = HashSet::new();
         for id in self.instances.iter().cloned() {
-            out.insert(self.parent.get_instance(id).qid());
+            out.insert(self.parent.query_id(id));
         }
         out.iter().map(|s| s.to_string()).collect()
     }
@@ -248,9 +266,6 @@ impl RankingDataset for LoadedRankingDataset {
             .map(|i| InstanceId::from_index(i))
             .collect()
     }
-    fn get_instance(&self, id: InstanceId) -> &dyn TrainingInstance {
-        &self.instances[id.to_index()]
-    }
     fn instances_by_query(&self) -> HashMap<String, Vec<InstanceId>> {
         self.data_by_query.clone()
     }
@@ -270,38 +285,51 @@ impl RankingDataset for LoadedRankingDataset {
     fn get_feature_value(&self, instance: InstanceId, fid: FeatureId) -> Option<f64> {
         self.instances[instance.to_index()].features.get(fid)
     }
+    fn score(&self, id: InstanceId, model: &Model) -> NotNan<f64> {
+        model.score(&self.instances[id.to_index()].features)
+    }
+    fn gain(&self, id: InstanceId) -> NotNan<f32> {
+        self.instances[id.to_index()].gain.clone()
+    }
+    fn query_id(&self, id: InstanceId) -> &str {
+        self.instances[id.to_index()].qid.as_str()
+    }
     fn try_lookup_feature(&self, name_or_num: &str) -> Result<FeatureId, Box<Error>> {
-        if let Some((num, _)) = self
-            .feature_names
-            .iter()
-            .find(|(_, v)| v.as_str() == name_or_num)
-        {
-            if let Some(idx) = self.features.iter().position(|n| n == num) {
-                return Ok(FeatureId::from_index(idx));
-            } else {
-                return Err(format!(
-                    "Named feature not present in actual dataset! {}",
-                    name_or_num
-                ))?;
-            }
-        }
+        try_lookup_feature(self, &self.feature_names, name_or_num)
+    }
+}
 
-        let num = name_or_num
-            .parse::<usize>()
-            .map(|id| FeatureId::from_index(id))
-            .map_err(|_| {
-                format!(
-                    "Could not turn {} into a name or number in this dataset.",
-                    name_or_num
-                )
-            })?;
-        if let Some(idx) = self.features.iter().position(|n| *n == num) {
+pub fn try_lookup_feature(dataset: &RankingDataset, feature_names: &HashMap<FeatureId, String>, name_or_num: &str) -> Result<FeatureId, Box<Error>> {
+    let features = dataset.features();
+    if let Some((num, _)) = feature_names
+        .iter()
+        .find(|(_, v)| v.as_str() == name_or_num)
+    {
+        if let Some(idx) = features.iter().position(|n| n == num) {
             return Ok(FeatureId::from_index(idx));
         } else {
             return Err(format!(
-                "Feature #{} not present in actual dataset!",
+                "Named feature not present in actual dataset! {}",
                 name_or_num
             ))?;
         }
+    }
+
+    let num = name_or_num
+        .parse::<usize>()
+        .map(|id| FeatureId::from_index(id))
+        .map_err(|_| {
+            format!(
+                "Could not turn {} into a name or number in this dataset.",
+                name_or_num
+            )
+        })?;
+    if let Some(idx) = features.iter().position(|n| *n == num) {
+        return Ok(FeatureId::from_index(idx));
+    } else {
+        return Err(format!(
+            "Feature #{} not present in actual dataset!",
+            name_or_num
+        ))?;
     }
 }
