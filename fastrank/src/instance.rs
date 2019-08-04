@@ -42,28 +42,6 @@ pub trait FeatureRead {
     fn dotp(&self, weights: &[f64]) -> f64;
 }
 
-pub trait TrainingInstance: Send + Sync {
-    fn gain(&self) -> NotNan<f32>;
-    fn qid(&self) -> &str;
-}
-
-pub trait Relevance {
-    fn is_relevant(&self) -> bool;
-    fn perceptron_label(&self) -> i32;
-}
-impl Relevance for &TrainingInstance {
-    fn is_relevant(&self) -> bool {
-        self.gain().into_inner() > 0.0
-    }
-    fn perceptron_label(&self) -> i32 {
-        if self.is_relevant() {
-            1
-        } else {
-            -1
-        }
-    }
-}
-
 pub struct Instance {
     pub gain: NotNan<f32>,
     pub qid: String,
@@ -110,15 +88,6 @@ impl FeatureRead for Features {
             }
         };
         output
-    }
-}
-
-impl TrainingInstance for Instance {
-    fn gain(&self) -> NotNan<f32> {
-        self.gain.clone()
-    }
-    fn qid(&self) -> &str {
-        self.qid.as_str()
     }
 }
 
