@@ -9,6 +9,8 @@ env:
     - RUST_BACKTRACE=1
 before_install:
   - sudo apt-get -y install python3-dev python3-pip python3-setuptools python3-wheel
+  - sudo pip3 install --upgrade pip
+  - pip3 install --user pyo3-pack
 deploy:
   skip_cleanup: true
   provider: script
