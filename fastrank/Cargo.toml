@@ -1,6 +1,6 @@
 [package]
 name = "fastrank"
-version = "0.1.0"
+version = "0.2.0"
 authors = ["John Foley <jjfoley@smith.edu>"]
 edition = "2018"
 publish = false
