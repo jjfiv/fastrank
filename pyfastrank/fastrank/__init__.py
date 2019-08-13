@@ -7,7 +7,7 @@ import ujson as json
 import sklearn
 import random
 from sklearn.datasets import load_svmlight_file
-from typing import Dict, List
+from typing import Dict, List, Set
 
 
 def _handle_rust_str(result) -> str:
@@ -66,11 +66,14 @@ def _maybe_raise_error_json(response):
 class CDataset(object):
     def __init__(self, pointer=None):
         self.pointer = pointer
+        # need to hold onto any numpy arrays...
+        self.numpy_arrays_to_keep = []
 
     def __del__(self):
         if self.pointer is not None:
             lib.free_dataset(self.pointer)
             self.pointer = None
+        self.numpy_arrays_to_keep = []
 
     def open_ranksvm(self, data_path, feature_names_path=None):
         if self.pointer is not None:
@@ -83,11 +86,44 @@ class CDataset(object):
         self.pointer = _handle_c_result(
             lib.load_ranksvm_format(data_path, feature_names_path)
         )
-        print(self.pointer)
+
+    def from_numpy(self, X, y, qid):
+        if self.pointer is not None:
+            raise ValueError("Cannot update a CDataset object after init!")
+        (N, D) = X.shape
+        assert N > 0
+        assert D > 0
+        assert len(y) == N
+        assert len(qid) == N
+        # TODO: be more flexible here!
+        assert X.dtype == "float32"
+        assert y.dtype == "float64"
+        assert qid.dtype == "int64"
+        # Since Rust just has a pointer to them, have python keep them!
+        self.numpy_arrays_to_keep = [X, y, qid]
+        # Pass pointers to these arrays to Rust!
+        self.pointer = _handle_c_result(
+            lib.make_dense_dataset_f32_f64_i64(
+                N,
+                D,
+                ffi.cast("float *", X.ctypes.data),
+                ffi.cast("double *", y.ctypes.data),
+                ffi.cast("int64_t *", qid.ctypes.data),
+            )
+        )
+
+    def train_model(self, train_req: "TrainRequest") -> dict:
+        if self.pointer is None:
+            raise ValueError("Forgot to call open_* or from_numpy on CDataset!")
+        train_req_str = json.dumps(train_req).encode("utf-8")
+        train_resp = json.loads(
+            _handle_rust_str(lib.train_model(train_req_str, self.pointer))
+        )
+        return train_resp
 
     def __query_json(self, message="num_features"):
         if self.pointer is None:
-            raise ValueError("Forgot to call open_* on CDataset!")
+            raise ValueError("Forgot to call open_* or from_numpy on CDataset!")
         response = json.loads(
             _handle_rust_str(
                 lib.query_dataset_json(self.pointer, message.encode("utf-8"))
@@ -96,20 +132,20 @@ class CDataset(object):
         _maybe_raise_error_json(response)
         return response
 
-    def num_features(self):
+    def num_features(self) -> int:
         return self.__query_json("num_features")
 
-    def feature_ids(self):
-        return self.__query_json("feature_ids")
+    def feature_ids(self) -> Set[int]:
+        return set(self.__query_json("feature_ids"))
 
-    def feature_names(self):
-        return self.__query_json("feature_names")
+    def feature_names(self) -> Set[str]:
+        return set(self.__query_json("feature_names"))
 
-    def num_instances(self):
+    def num_instances(self) -> int:
         return self.__query_json("num_instances")
 
-    def queries(self):
-        return self.__query_json("queries")
+    def queries(self) -> Set[str]:
+        return set(self.__query_json("queries"))
 
 
 @attr.s
@@ -157,52 +193,77 @@ def query_json(message: str) -> str:
 
 #%%
 if __name__ == "__main__":
+    _EXPECTED_QUERIES = set(
+        """378 363 811 321 807 347 646 397 802 804 
+           808 445 819 820 426 626 393 824 442 433 
+           825 350 823 422 336 400 814 817 439 822 
+           690 816 801 805 367 810 813 818 414 812 
+           809 362 341 803 375""".split()
+    )
+    _EXPECTED_N = 782
+    _EXPECTED_D = 6
+    _EXPECTED_FEATURE_IDS = set(range(_EXPECTED_D))
+    _EXPECTED_FEATURE_NAMES = set(
+        [
+            "0",
+            "pagerank",
+            "para-fraction",
+            "caption_count",
+            "caption_partial",
+            "caption_position",
+        ]
+    )
     rd = CDataset()
     rd.open_ranksvm("../examples/trec_news_2018.train")
-    print(
-        "num_features: {0}, num_instances: {1}, queries: {2} features: {3}".format(
-            rd.num_features(), rd.num_instances(), rd.queries(), rd.feature_names()
-        )
-    )
-    rd2 = CDataset()
-    rd2.open_ranksvm(
+    assert rd.queries() == _EXPECTED_QUERIES
+    assert rd.feature_ids() == _EXPECTED_FEATURE_IDS
+    assert rd.feature_names() == set(str(x) for x in _EXPECTED_FEATURE_IDS)
+    assert rd.num_features() == _EXPECTED_D
+    assert rd.num_instances() == _EXPECTED_N
+    del rd
+    rd = CDataset()
+    rd.open_ranksvm(
         "../examples/trec_news_2018.train", "../examples/trec_news_2018.features.json"
     )
-    print(
-        "num_features: {0}, num_instances: {1}, queries: {2} features: {3}".format(
-            rd.num_features(), rd.num_instances(), rd.queries(), rd.feature_names()
-        )
-    )
+    assert rd.queries() == _EXPECTED_QUERIES
+    assert rd.feature_ids() == _EXPECTED_FEATURE_IDS
+    assert rd.feature_names() == _EXPECTED_FEATURE_NAMES
+    assert rd.num_features() == _EXPECTED_D
+    assert rd.num_instances() == _EXPECTED_N
 
     print(TrainRequest())
-
     train_req = query_json("coordinate_ascent_defaults")
     ca_params = train_req["params"]["CoordinateAscent"]
     ca_params["init_random"] = True
     ca_params["seed"] = 42
     ca_params["quiet"] = True
-    print(train_req)
 
+    print(train_req)
+    print(rd.train_model(train_req))
+
+    # Test out "from_numpy:"
     (train_X, train_y, train_qid) = load_svmlight_file(
         "../examples/trec_news_2018.train",
         dtype=np.float32,
         zero_based=False,
         query_id=True,
     )
+
+    # this loader supports zero-based!
+    _EXPECTED_D -= 1
+    _EXPECTED_FEATURE_IDS = set(range(_EXPECTED_D))
+
     train_X = train_X.todense()
+    train = CDataset()
+    train.from_numpy(train_X, train_y, train_qid)
+
     (train_N, train_D) = train_X.shape
-    print(train_N, train_D)
-    train_req_str = json.dumps(train_req).encode("utf-8")
-    train_resp = json.loads(
-        _handle_rust_str(
-            lib.train_dense_dataset_f32_f64_i64(
-                train_req_str,
-                train_N,
-                train_D,
-                ffi.cast("float *", train_X.ctypes.data),
-                ffi.cast("double *", train_y.ctypes.data),
-                ffi.cast("int64_t *", train_qid.ctypes.data),
-            )
-        )
-    )
-    print(train_resp)
+    assert train.num_features() == train_D
+    assert train.num_instances() == train_N
+    assert train.queries() == _EXPECTED_QUERIES
+    assert train.feature_ids() == _EXPECTED_FEATURE_IDS
+    assert train.feature_names() == set(str(x) for x in _EXPECTED_FEATURE_IDS)
+    assert train.num_features() == _EXPECTED_D
+    assert train.num_instances() == _EXPECTED_N
+
+    print(train.train_model(train_req))

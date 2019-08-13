@@ -201,21 +201,43 @@ fn result_exec_json(query_str: &CStr) -> Result<String, Box<Error>> {
 }
 
 #[no_mangle]
-pub extern "C" fn train_dense_dataset_f32_f64_i64(
-    json_cmd_str: *mut c_void,
+pub extern "C" fn make_dense_dataset_f32_f64_i64(
     n: usize,
     d: usize,
     x: *const f32,
     y: *const f64,
     qids: *const i64,
-) -> *const c_void {
+) -> *const CResult {
     let x_len = n * d;
     let x_slice: &'static [f32] = unsafe { slice::from_raw_parts(x, x_len) };
     let y_slice: &'static [f64] = unsafe { slice::from_raw_parts(y, n) };
     let qid_slice: &'static [i64] = unsafe { slice::from_raw_parts(qids, n) };
+    let mut c_result = Box::new(CResult::default());
+    match DenseDataset::try_new(n, d, x_slice, y_slice, qid_slice) {
+        Ok(dd) => {
+            let success: Box<CDataset> = Box::new(CDataset {
+                reference: dd.into_ref(),
+            });
+            c_result.success = Box::into_raw(success) as *const c_void;
+        }
+        Err(e) => {
+            let error_message = serde_json::to_string(&ErrorMessage {
+                error: "error".to_string(),
+                context: format!("{:?}", e),
+            })
+            .unwrap();
+            c_result.error_message = return_string(&error_message);
+        }
+    };
+    Box::into_raw(c_result)
+}
+
+#[no_mangle]
+pub extern "C" fn train_model(json_cmd_str: *mut c_void, dataset: *mut c_void) -> *const c_void {
+    let dataset: Option<&CDataset> = unsafe { (dataset as *mut CDataset).as_ref() };
     let json_cmd_str: &CStr = unsafe { CStr::from_ptr(json_cmd_str as *mut c_char) };
 
-    let output = match train_dense_dataset_inner(json_cmd_str, n, d, x_slice, y_slice, qid_slice) {
+    let output = match result_train_model(json_cmd_str, dataset) {
         Ok(message) => message,
         Err(e) => format!("Error: {:?}", e),
     };
@@ -224,20 +246,19 @@ pub extern "C" fn train_dense_dataset_f32_f64_i64(
     CString::into_raw(c_output) as *const c_void
 }
 
-fn train_dense_dataset_inner(
+fn result_train_model(
     json_cmd_str: &CStr,
-    n: usize,
-    d: usize,
-    x_arr: &'static [f32],
-    y_arr: &'static [f64],
-    qids: &'static [i64],
+    dataset: Option<&CDataset>,
 ) -> Result<String, Box<Error>> {
     let train_request = json_cmd_str
         .to_str()
-        .map_err(|_| "Could not convert your query string to UTF-8!")?;
+        .map_err(|_| "Could not convert your train_request string to UTF-8!")?;
+    let dataset = match dataset {
+        Some(d) => d,
+        None => Err("Dataset pointer is null!")?,
+    };
 
     let train_request: TrainRequest = serde_json::from_str(train_request)?;
-    let dataset = DenseDataset::try_new(n, d, x_arr, y_arr, qids)?.into_ref();
-    let response = do_training(train_request, dataset)?;
+    let response = do_training(train_request, dataset.reference.clone())?;
     Ok(serde_json::to_string(&response)?)
 }
