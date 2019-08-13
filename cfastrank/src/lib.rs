@@ -9,6 +9,7 @@ use fastrank::dataset::DatasetRef;
 use fastrank::dataset::RankingDataset;
 use fastrank::dense_dataset::DenseDataset;
 use fastrank::json_api::*;
+use fastrank::sampling::DatasetSampling;
 use std::error::Error;
 use std::ffi::{CStr, CString};
 use std::ptr;
@@ -22,7 +23,7 @@ struct ErrorMessage {
 
 pub struct CDataset {
     /// Reference to Rust-based Dataset.
-    reference: DatasetRef,
+    reference: Box<dyn RankingDataset>,
 }
 
 #[repr(C)]
@@ -77,7 +78,7 @@ pub extern "C" fn load_ranksvm_format(
     match result_load_ranksvm_format(data_path, feature_names_path) {
         Ok(response) => {
             let c_dataset = Box::new(CDataset {
-                reference: response,
+                reference: Box::new(response),
             });
             c_result.success = Box::into_raw(c_dataset) as *const c_void;
         }
@@ -109,6 +110,50 @@ fn result_load_ranksvm_format(
         .map(|path| dataset::load_feature_names_json(path))
         .transpose()?;
     Ok(DatasetRef::load_libsvm(data_path, feature_names.as_ref())?)
+}
+
+#[no_mangle]
+pub extern "C" fn dataset_query_sampling(
+    dataset: *mut CDataset,
+    queries_json_list: *const c_void,
+) -> *const CResult {
+    let dataset: Option<&CDataset> = unsafe { (dataset as *mut CDataset).as_ref() };
+    let queries_json_list: &CStr = unsafe { CStr::from_ptr(queries_json_list as *mut c_char) };
+    let mut c_result = Box::new(CResult::default());
+    match result_dataset_query_sampling(dataset, queries_json_list) {
+        Ok(response) => {
+            let c_dataset = Box::new(CDataset {
+                reference: response,
+            });
+            c_result.success = Box::into_raw(c_dataset) as *const c_void;
+        }
+        Err(e) => {
+            let error_message = serde_json::to_string(&ErrorMessage {
+                error: "error".to_string(),
+                context: format!("{:?}", e),
+            })
+            .unwrap();
+            c_result.error_message = return_string(&error_message);
+        }
+    };
+    Box::into_raw(c_result)
+}
+
+fn result_dataset_query_sampling(
+    dataset: Option<&CDataset>,
+    queries_json_list: &CStr,
+) -> Result<Box<dyn RankingDataset>, Box<Error>> {
+    let dataset = match dataset {
+        Some(d) => d,
+        None => Err("Dataset pointer is null!")?,
+    };
+    let queries_json_list: &str = queries_json_list
+        .to_str()
+        .map_err(|_| "Could not convert your query string to UTF-8!")?;
+
+    let queries: Vec<String> = serde_json::from_str(queries_json_list)?;
+
+    Ok(Box::new(dataset.reference.as_ref().with_queries(&queries)))
 }
 
 #[no_mangle]
@@ -216,7 +261,7 @@ pub extern "C" fn make_dense_dataset_f32_f64_i64(
     match DenseDataset::try_new(n, d, x_slice, y_slice, qid_slice) {
         Ok(dd) => {
             let success: Box<CDataset> = Box::new(CDataset {
-                reference: dd.into_ref(),
+                reference: Box::new(dd.into_ref()),
             });
             c_result.success = Box::into_raw(success) as *const c_void;
         }
@@ -259,6 +304,6 @@ fn result_train_model(
     };
 
     let train_request: TrainRequest = serde_json::from_str(train_request)?;
-    let response = do_training(train_request, dataset.reference.clone())?;
+    let response = do_training(train_request, dataset.reference.as_ref())?;
     Ok(serde_json::to_string(&response)?)
 }

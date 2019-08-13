@@ -8,6 +8,7 @@ import sklearn
 import random
 from sklearn.datasets import load_svmlight_file
 from typing import Dict, List, Set
+from collections import Counter
 
 
 def _handle_rust_str(result) -> str:
@@ -112,9 +113,31 @@ class CDataset(object):
             )
         )
 
-    def train_model(self, train_req: "TrainRequest") -> dict:
+    def _require_init(self):
         if self.pointer is None:
             raise ValueError("Forgot to call open_* or from_numpy on CDataset!")
+
+    def subsample(self, queries: List[str]) -> "CDataset":
+        self._require_init()
+        actual_queries = self.queries()
+        for q in queries:
+            if q not in actual_queries:
+                raise ValueError(
+                    "Asked for query that does not exist in subsample: {0} not in {1}".format(
+                        q, actual_queries
+                    )
+                )
+        child = CDataset()
+        # keep those alive if need-be in case they lose the parent!
+        child.numpy_arrays_to_keep = self.numpy_arrays_to_keep
+        request = json.dumps(queries).encode("utf-8")
+        child.pointer = _handle_c_result(
+            lib.dataset_query_sampling(self.pointer, request)
+        )
+        return child
+
+    def train_model(self, train_req: "TrainRequest") -> dict:
+        self._require_init()
         train_req_str = json.dumps(train_req).encode("utf-8")
         train_resp = json.loads(
             _handle_rust_str(lib.train_model(train_req_str, self.pointer))
@@ -122,8 +145,7 @@ class CDataset(object):
         return train_resp
 
     def __query_json(self, message="num_features"):
-        if self.pointer is None:
-            raise ValueError("Forgot to call open_* or from_numpy on CDataset!")
+        self._require_init()
         response = json.loads(
             _handle_rust_str(
                 lib.query_dataset_json(self.pointer, message.encode("utf-8"))
@@ -231,6 +253,28 @@ if __name__ == "__main__":
     assert rd.num_features() == _EXPECTED_D
     assert rd.num_instances() == _EXPECTED_N
 
+    # Test out "from_numpy:"
+    (train_X, train_y, train_qid) = load_svmlight_file(
+        "../examples/trec_news_2018.train",
+        dtype=np.float32,
+        zero_based=False,
+        query_id=True,
+    )
+
+    # Test subsample:
+    _SUBSET = """378 363 811 321 807 347 646 397 802 804""".split()
+    sample_rd = rd.subsample(_SUBSET)
+    print(sample_rd.queries())
+    assert sample_rd.queries() == set(_SUBSET)
+    assert sample_rd.num_features() == _EXPECTED_D
+    assert sample_rd.feature_ids() == _EXPECTED_FEATURE_IDS
+    assert sample_rd.feature_names() == _EXPECTED_FEATURE_NAMES
+
+    # calculate how many instances rust should've selected:
+    count_by_qid = Counter(train_qid)
+    expected_count = sum(count_by_qid[int(q)] for q in _SUBSET)
+    assert sample_rd.num_instances() == expected_count
+
     print(TrainRequest())
     train_req = query_json("coordinate_ascent_defaults")
     ca_params = train_req["params"]["CoordinateAscent"]
@@ -240,14 +284,6 @@ if __name__ == "__main__":
 
     print(train_req)
     print(rd.train_model(train_req))
-
-    # Test out "from_numpy:"
-    (train_X, train_y, train_qid) = load_svmlight_file(
-        "../examples/trec_news_2018.train",
-        dtype=np.float32,
-        zero_based=False,
-        query_id=True,
-    )
 
     # this loader supports zero-based!
     _EXPECTED_D -= 1

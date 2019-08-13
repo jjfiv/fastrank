@@ -1,7 +1,7 @@
 use std::error::Error;
 
 use crate::coordinate_ascent::CoordinateAscentParams;
-use crate::dataset::DatasetRef;
+use crate::dataset::RankingDataset;
 use crate::evaluators::SetEvaluator;
 use crate::model::ModelEnum;
 use crate::qrel::QuerySetJudgments;
@@ -36,16 +36,16 @@ pub enum TrainResponse {
 
 pub fn do_training(
     train_request: TrainRequest,
-    dataset: DatasetRef,
+    dataset: &dyn RankingDataset,
 ) -> Result<TrainResponse, Box<Error>> {
     let evaluator = SetEvaluator::create(
-        &dataset,
+        dataset,
         train_request.measure.as_str(),
         train_request.judgments,
     )?;
     Ok(match train_request.params {
         FastRankModelParams::CoordinateAscent(params) => {
-            let model = params.learn(&dataset, &evaluator);
+            let model = params.learn(dataset, &evaluator);
             TrainResponse::LearnedModel(model)
         }
     })
