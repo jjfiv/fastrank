@@ -8,6 +8,7 @@ use fastrank::dataset;
 use fastrank::dataset::DatasetRef;
 use fastrank::dataset::RankingDataset;
 use fastrank::dense_dataset::DenseDataset;
+use fastrank::evaluators::SetEvaluator;
 use fastrank::json_api::*;
 use fastrank::model::ModelEnum;
 use fastrank::qrel::QuerySetJudgments;
@@ -143,15 +144,14 @@ fn result_cqrel_query_json(cqrel: Option<&CQRel>, query_str: &CStr) -> Result<St
         .to_str()
         .map_err(|_| "Could not convert your query string to UTF-8!")?;
     Ok(match query_str {
-        "to_json" => serde_json::to_string(&cqrel.actual)?,
+        "to_json" => serde_json::to_string(&cqrel.actual.query_to_judgments)?,
         "queries" => serde_json::to_string(&cqrel.actual.get_queries())?,
         qid => match cqrel.actual.get(qid) {
             None => Err(format!("Unknown request: {}", qid))?,
-            Some(query_judgments) => serde_json::to_string(&query_judgments)?
-        }
+            Some(query_judgments) => serde_json::to_string(&query_judgments)?,
+        },
     })
 }
-
 
 #[no_mangle]
 pub extern "C" fn load_ranksvm_format(
@@ -358,4 +358,43 @@ fn result_model_query_json(model: Option<&CModel>, query_str: &CStr) -> Result<S
     };
 
     Ok(response)
+}
+
+/// returns json of qid->score for evaluator; or error-json.
+#[no_mangle]
+pub extern "C" fn evaluate_by_query(
+    model: *const CModel,
+    dataset: *const CDataset,
+    qrel: *const CQRel,
+    evaluator: *const c_void,
+) -> *const c_void {
+    let model: Option<&CModel> = unsafe { (model as *mut CModel).as_ref() };
+    let dataset: Option<&CDataset> = unsafe { (dataset as *mut CDataset).as_ref() };
+    let qrel: Option<&CQRel> = unsafe { (qrel as *mut CQRel).as_ref() };
+    let evaluator: &CStr = unsafe { CStr::from_ptr(evaluator as *mut c_char) };
+    result_to_json(result_evaluate_by_query(model, dataset, qrel, evaluator))
+}
+
+fn result_evaluate_by_query(
+    model: Option<&CModel>,
+    dataset: Option<&CDataset>,
+    qrel: Option<&CQRel>,
+    evaluator: &CStr,
+) -> Result<String, Box<Error>> {
+    let model = match model {
+        Some(d) => &d.actual,
+        None => Err("Model pointer is null!")?,
+    };
+    let dataset = match dataset {
+        Some(d) => d.reference.as_ref(),
+        None => Err("Model pointer is null!")?,
+    };
+    let evaluator: &str = evaluator
+        .to_str()
+        .map_err(|_| "Could not convert your evaluator string to UTF-8!")?;
+    let qrel = qrel.map(|cq| cq.actual.clone());
+
+    let eval = SetEvaluator::create(dataset, evaluator, qrel)?;
+    let output = eval.evaluate_to_map(model);
+    Ok(serde_json::to_string(&output)?)
 }

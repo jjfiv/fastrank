@@ -108,8 +108,9 @@ class CQRel(object):
 
 
 class CModel(object):
-    def __init__(self, pointer=None):
+    def __init__(self, pointer, params):
         self.pointer = pointer
+        self.params = params
 
     def __del__(self):
         if self.pointer is not None:
@@ -213,7 +214,7 @@ class CDataset(object):
         self._require_init()
         train_req_str = json.dumps(train_req).encode("utf-8")
         train_resp = _handle_c_result(lib.train_model(train_req_str, self.pointer))
-        return CModel(train_resp)
+        return CModel(train_resp, train_req)
 
     def _query_json(self, message="num_features"):
         self._require_init()
@@ -239,6 +240,26 @@ class CDataset(object):
 
     def queries(self) -> Set[str]:
         return set(self._query_json("queries"))
+
+    def evaluate(
+        self, model: CModel, evaluator: str, qrel: CQRel = None
+    ) -> Dict[str, float]:
+        self._require_init()
+        model._require_init()
+        qrel_pointer = ffi.NULL
+        if qrel is not None:
+            qrel._require_init()
+            qrel_pointer = qrel.pointer
+
+        response = json.loads(
+            _handle_rust_str(
+                lib.evaluate_by_query(
+                    model.pointer, self.pointer, qrel_pointer, evaluator.encode("utf-8")
+                )
+            )
+        )
+        _maybe_raise_error_json(response)
+        return response
 
 
 @attr.s
@@ -318,7 +339,7 @@ if __name__ == "__main__":
     qrel = CQRel()
     qrel.load_file("../examples/newsir18-entity.qrel")
     assert qrel.queries() == _FULL_QUERIES
-    print(qrel.to_json())
+    assert set(qrel.to_json().keys()) == _FULL_QUERIES
 
     rd = CDataset()
     rd.open_ranksvm("../examples/trec_news_2018.train")
@@ -387,4 +408,8 @@ if __name__ == "__main__":
     assert train.num_features() == _EXPECTED_D
     assert train.num_instances() == _EXPECTED_N
 
-    print(train.train_model(train_req))
+    model = train.train_model(train_req)
+    # for this particular dataset, there should be no difference between calculating with and without qrels:
+    ndcg5_with = np.mean(list(train.evaluate(model, "ndcg@5", qrel).values()))
+    ndcg5_without = np.mean(list(train.evaluate(model, "ndcg@5").values()))
+    assert abs(ndcg5_with - ndcg5_without) < 0.0000001
