@@ -5,6 +5,7 @@ use std::sync::Arc;
 
 #[derive(Clone, Serialize, Deserialize)]
 pub struct QueryJudgments {
+    #[serde(flatten)]
     docid_to_rel: Arc<HashMap<String, NotNan<f32>>>,
 }
 
@@ -41,6 +42,7 @@ impl QueryJudgments {
 
 #[derive(Clone, Serialize, Deserialize)]
 pub struct QuerySetJudgments {
+    #[serde(flatten)]
     pub query_to_judgments: Arc<HashMap<String, QueryJudgments>>,
 }
 

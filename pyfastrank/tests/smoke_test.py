@@ -6,6 +6,14 @@ from sklearn.datasets import load_svmlight_file
 from collections import Counter
 from fastrank import CQRel, CDataset, CModel, query_json
 
+_FEATURE_EXPECTED_NDCG5 = {
+    "0": 0.10882970494872854,
+    "para-fraction": 0.43942925167146063,
+    "caption_position": 0.3838323029697044,
+    "caption_count": 0.363671198812673,
+    "pagerank": 0.27063237711015825,
+    "caption_partial": 0.39492241169033154,
+}
 _FULL_QUERIES = set(
     """
         321 336 341 347 350 362 363 367 375 378
@@ -39,10 +47,8 @@ _EXPECTED_FEATURE_NAMES = set(
 
 class TestRustAPI(unittest.TestCase):
     def setUp(self):
-        self.qrel = CQRel()
-        self.qrel.load_file("../examples/newsir18-entity.qrel")
-        self.rd = CDataset()
-        self.rd.open_ranksvm(
+        self.qrel = CQRel.load_file("../examples/newsir18-entity.qrel")
+        self.rd = CDataset.open_ranksvm(
             "../examples/trec_news_2018.train",
             "../examples/trec_news_2018.features.json",
         )
@@ -65,8 +71,7 @@ class TestRustAPI(unittest.TestCase):
         self.assertEqual(set(qrel.to_json().keys()), _FULL_QUERIES)
 
     def test_load_dataset(self):
-        rd = CDataset()
-        rd.open_ranksvm("../examples/trec_news_2018.train")
+        rd = CDataset.open_ranksvm("../examples/trec_news_2018.train")
         assert rd.queries() == _EXPECTED_QUERIES
         assert rd.feature_ids() == _EXPECTED_FEATURE_IDS
         assert rd.feature_names() == set(str(x) for x in _EXPECTED_FEATURE_IDS)
@@ -81,11 +86,11 @@ class TestRustAPI(unittest.TestCase):
         assert rd.num_features() == _EXPECTED_D
         assert rd.num_instances() == _EXPECTED_N
 
-    def test_subsample(self):
+    def test_subsample_queries(self):
         rd = self.rd
         # Test subsample:
         _SUBSET = """378 363 811 321 807 347 646 397 802 804""".split()
-        sample_rd = rd.subsample(_SUBSET)
+        sample_rd = rd.subsample_queries(_SUBSET)
         assert sample_rd.queries() == set(_SUBSET)
         assert sample_rd.num_features() == _EXPECTED_D
         assert sample_rd.feature_ids() == _EXPECTED_FEATURE_IDS
@@ -95,6 +100,30 @@ class TestRustAPI(unittest.TestCase):
         count_by_qid = Counter(self.train_qid)
         expected_count = sum(count_by_qid[int(q)] for q in _SUBSET)
         assert sample_rd.num_instances() == expected_count
+
+    def test_subsample_features(self):
+        rd = self.rd
+        name_to_index = rd.feature_name_to_index()
+        # single feature model:
+        params = self.train_req  # todo deepcopy, no restarts
+        feature_scores = {}
+        for feature in _EXPECTED_FEATURE_NAMES:
+            rd_single = rd.subsample_feature_names([feature])
+            model = rd_single.train_model(params)
+            feature_scores[feature] = np.mean(
+                list(rd.evaluate(model, "ndcg@5").values())
+            )
+            self.assertAlmostEqual(
+                feature_scores[feature],
+                _FEATURE_EXPECTED_NDCG5[feature],
+                msg="NDCG@5 single-feature ranker expectation.",
+            )
+            my_index = name_to_index[feature]
+            for (i, w) in enumerate(model.to_json()["Linear"]["weights"]):
+                if i == my_index:
+                    pass
+                else:
+                    self.assertAlmostEqual(w, 0.0, "Every other weight should be zero.")
 
     def test_train_model(self):
         rd = self.rd
@@ -110,8 +139,7 @@ class TestRustAPI(unittest.TestCase):
         train_X = self.train_X.todense()
         train_y = self.train_y
         train_qid = self.train_qid
-        train = CDataset()
-        train.from_numpy(train_X, train_y, train_qid)
+        train = CDataset.from_numpy(train_X, train_y, train_qid)
 
         (train_N, train_D) = train_X.shape
         assert train.num_features() == train_D

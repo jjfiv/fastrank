@@ -68,10 +68,13 @@ class CQRel(object):
             lib.free_cqrel(self.pointer)
             self.pointer = None
 
-    def load_file(self, path: str):
-        if self.pointer is not None:
-            raise ValueError("Cannot re-load a CQRel object.")
-        self.pointer = _handle_c_result(lib.load_cqrel(path.encode("utf-8")))
+    @staticmethod
+    def load_file(path: str) -> "CQRel":
+        return CQRel(_handle_c_result(lib.load_cqrel(path.encode("utf-8"))))
+
+    @staticmethod
+    def from_dictionary(dictionaries: Dict[str, Dict[str, float]]) -> "CQRel":
+        return CQRel(_handle_c_result(lib.cqrel_from_json(json.dumps(dictionaries))))
 
     def _require_init(self):
         if self.pointer is None:
@@ -144,21 +147,19 @@ class CDataset(object):
             self.pointer = None
         self.numpy_arrays_to_keep = []
 
-    def open_ranksvm(self, data_path, feature_names_path=None):
-        if self.pointer is not None:
-            raise ValueError("Cannot call open twice!")
+    @staticmethod
+    def open_ranksvm(data_path, feature_names_path=None) -> "CDataset":
         data_path = data_path.encode("utf-8")
         if feature_names_path is not None:
             feature_names_path = feature_names_path.encode("utf-8")
         else:
             feature_names_path = ffi.NULL
-        self.pointer = _handle_c_result(
-            lib.load_ranksvm_format(data_path, feature_names_path)
+        return CDataset(
+            _handle_c_result(lib.load_ranksvm_format(data_path, feature_names_path))
         )
 
-    def from_numpy(self, X, y, qid):
-        if self.pointer is not None:
-            raise ValueError("Cannot update a CDataset object after init!")
+    @staticmethod
+    def from_numpy(X, y, qid) -> "CDataset":
         (N, D) = X.shape
         assert N > 0
         assert D > 0
@@ -169,23 +170,27 @@ class CDataset(object):
         assert y.dtype == "float64"
         assert qid.dtype == "int64"
         # Since Rust just has a pointer to them, have python keep them!
-        self.numpy_arrays_to_keep = [X, y, qid]
+        numpy_arrays_to_keep = [X, y, qid]
         # Pass pointers to these arrays to Rust!
-        self.pointer = _handle_c_result(
-            lib.make_dense_dataset_f32_f64_i64(
-                N,
-                D,
-                ffi.cast("float *", X.ctypes.data),
-                ffi.cast("double *", y.ctypes.data),
-                ffi.cast("int64_t *", qid.ctypes.data),
+        dataset = CDataset(
+            _handle_c_result(
+                lib.make_dense_dataset_f32_f64_i64(
+                    N,
+                    D,
+                    ffi.cast("float *", X.ctypes.data),
+                    ffi.cast("double *", y.ctypes.data),
+                    ffi.cast("int64_t *", qid.ctypes.data),
+                )
             )
         )
+        dataset.numpy_arrays_to_keep = numpy_arrays_to_keep
+        return dataset
 
     def _require_init(self):
         if self.pointer is None:
             raise ValueError("Forgot to call open_* or from_numpy on CDataset!")
 
-    def subsample(self, queries: List[str]) -> "CDataset":
+    def subsample_queries(self, queries: List[str]) -> "CDataset":
         self._require_init()
         actual_queries = self.queries()
         for q in queries:
@@ -204,7 +209,19 @@ class CDataset(object):
         )
         return child
 
-    def train_model(self, train_req: "TrainRequest") -> CModel:
+    def subsample_feature_names(self, features: List[str]) -> "CDataset":
+        name_to_id = dict(
+            zip(self._query_json("feature_names"), self._query_json("feature_ids"))
+        )
+        fnums = sorted(set(name_to_id[f] for f in features))
+        fnums_str = json.dumps(fnums).encode("utf-8")
+        child = CDataset(
+            _handle_c_result(lib.dataset_feature_sampling(self.pointer, fnums_str))
+        )
+        child.numpy_arrays_to_keep = self.numpy_arrays_to_keep
+        return child
+
+    def train_model(self, train_req: Dict) -> CModel:
         self._require_init()
         train_req_str = json.dumps(train_req).encode("utf-8")
         train_resp = _handle_c_result(lib.train_model(train_req_str, self.pointer))
@@ -228,6 +245,16 @@ class CDataset(object):
 
     def feature_names(self) -> Set[str]:
         return set(self._query_json("feature_names"))
+
+    def feature_index_to_name(self):
+        return dict(
+            zip(self._query_json("feature_ids"), self._query_json("feature_names"))
+        )
+
+    def feature_name_to_index(self):
+        return dict(
+            zip(self._query_json("feature_names"), self._query_json("feature_ids"))
+        )
 
     def num_instances(self) -> int:
         return self._query_json("num_instances")

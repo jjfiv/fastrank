@@ -94,8 +94,16 @@ fn optimize_inner<R: Rng>(
     let quiet = params.quiet;
     let tolerance = NotNan::new(params.tolerance).unwrap();
 
+    let fids: Vec<FeatureId> = data.features().clone();
+    let model_dim = (fids
+        .iter()
+        .max()
+        .expect("Should be at least one feature!")
+        .to_index() as u32)
+        + 1;
+
     // Initialize to even weights:
-    let mut model = DenseLinearRankingModel::new(data.n_dim());
+    let mut model = DenseLinearRankingModel::new(model_dim);
     model.reset(params.init_random, &mut rand, &data.features());
 
     // Initialize this local best (within current restart cycle):
@@ -103,8 +111,8 @@ fn optimize_inner<R: Rng>(
     let mut current_best = Scored::new(start_score, model.clone());
 
     loop {
+        let mut fids = fids.clone();
         // Get new order of features for this optimization pass.
-        let mut fids: Vec<FeatureId> = data.features().clone();
         fids.shuffle(&mut rand);
 
         if !quiet {
