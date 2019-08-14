@@ -41,7 +41,7 @@ impl QueryJudgments {
 
 #[derive(Clone, Serialize, Deserialize)]
 pub struct QuerySetJudgments {
-    query_to_judgments: Arc<HashMap<String, QueryJudgments>>,
+    pub query_to_judgments: Arc<HashMap<String, QueryJudgments>>,
 }
 
 impl QuerySetJudgments {
@@ -49,6 +49,9 @@ impl QuerySetJudgments {
         Self {
             query_to_judgments: Arc::new(data),
         }
+    }
+    pub fn get_queries(&self) -> Vec<String> {
+        self.query_to_judgments.keys().map(|s| s.to_string()).collect()
     }
     pub fn get(&self, qid: &str) -> Option<QueryJudgments> {
         self.query_to_judgments.get(qid).cloned()

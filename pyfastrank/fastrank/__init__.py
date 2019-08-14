@@ -64,6 +64,49 @@ def _maybe_raise_error_json(response):
     return
 
 
+class CQRel(object):
+    def __init__(self, pointer=None):
+        self.pointer = pointer
+        self._queries = None
+
+    def __del__(self):
+        if self.pointer is not None:
+            lib.free_cqrel(self.pointer)
+            self.pointer = None
+
+    def load_file(self, path: str):
+        if self.pointer is not None:
+            raise ValueError("Cannot re-load a CQRel object.")
+        self.pointer = _handle_c_result(lib.load_cqrel(path.encode("utf-8")))
+
+    def _require_init(self):
+        if self.pointer is None:
+            raise ValueError("CQRel is null!")
+
+    def _query_json(self, message="queries"):
+        self._require_init()
+        response = json.loads(
+            _handle_rust_str(
+                lib.cqrel_query_json(self.pointer, message.encode("utf-8"))
+            )
+        )
+        _maybe_raise_error_json(response)
+        return response
+
+    def to_json(self) -> Dict[str, Dict[str, float]]:
+        return self._query_json("to_json")
+
+    def queries(self) -> Set[str]:
+        if self._queries is None:
+            self._queries = set(self._query_json("queries"))
+        return self._queries
+
+    def query_json(self, qid: str) -> Dict[str, float]:
+        if qid in self.queries():
+            return self._query_json(qid)
+        raise ValueError("No qid={0} in cqrel: {1}".format(qid, self.queries()))
+
+
 class CModel(object):
     def __init__(self, pointer=None):
         self.pointer = pointer
@@ -77,11 +120,11 @@ class CModel(object):
         if self.pointer is None:
             raise ValueError("CModel is null!")
 
-    def _query_json(self, message="num_features"):
+    def _query_json(self, message="to_json"):
         self._require_init()
         response = json.loads(
             _handle_rust_str(
-                lib.query_model_json(self.pointer, message.encode("utf-8"))
+                lib.model_query_json(self.pointer, message.encode("utf-8"))
             )
         )
         _maybe_raise_error_json(response)
@@ -176,7 +219,7 @@ class CDataset(object):
         self._require_init()
         response = json.loads(
             _handle_rust_str(
-                lib.query_dataset_json(self.pointer, message.encode("utf-8"))
+                lib.dataset_query_json(self.pointer, message.encode("utf-8"))
             )
         )
         _maybe_raise_error_json(response)
@@ -243,6 +286,15 @@ def query_json(message: str) -> str:
 
 #%%
 if __name__ == "__main__":
+    _FULL_QUERIES = set(
+        """
+           321 336 341 347 350 362 363 367 375 378
+           393 397 400 408 414 422 426 427 433 439 
+           442 445 626 646 690 801 802 803 804 805 
+           806 807 808 809 810 811 812 813 814 815 
+           816 817 818 819 820 821 822 823 824 825
+    """.split()
+    )
     _EXPECTED_QUERIES = set(
         """378 363 811 321 807 347 646 397 802 804 
            808 445 819 820 426 626 393 824 442 433 
@@ -263,6 +315,11 @@ if __name__ == "__main__":
             "caption_position",
         ]
     )
+    qrel = CQRel()
+    qrel.load_file("../examples/newsir18-entity.qrel")
+    assert qrel.queries() == _FULL_QUERIES
+    print(qrel.to_json())
+
     rd = CDataset()
     rd.open_ranksvm("../examples/trec_news_2018.train")
     assert rd.queries() == _EXPECTED_QUERIES
