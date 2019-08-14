@@ -8,9 +8,9 @@ env:
   global:
     - RUST_BACKTRACE=1
 before_install:
-  - sudo apt-get -y install python3-dev python3-pip python3-setuptools python3-wheel
+  - sudo apt-get -y install python3-dev python3-pip python3-setuptools python3-wheel pyo3-pack
 script:
-  - cargo build --verbose --all
+  - cargo build --release --verbose --all
   - cargo test --verbose --all
   - bash scripts/smoke_test.sh
 deploy:
