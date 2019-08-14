@@ -9,6 +9,9 @@ env:
     - RUST_BACKTRACE=1
 before_install:
   - sudo apt-get -y install python3-dev python3-pip python3-setuptools python3-wheel pyo3-pack
+  - sudo pip install --upgrade pip
+  - sudo pip install -r cfastrank/requirements.txt
+  - sudo pip install -r pyfastrank/requirements.txt
 script:
   - cargo build --release --verbose --all
   - cargo test --verbose --all
