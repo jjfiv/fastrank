@@ -22,17 +22,7 @@ class CoordinateAscentParams(object):
 
 
 @attr.s
-class QueryJudgments(object):
-    docid_to_rel: Dict[str, float] = attr.ib(factory=dict)
-
-
-@attr.s
-class QuerySetJudgments(object):
-    query_to_judgments: Dict[str, QueryJudgments] = attr.ib(factory=dict)
-
-
-@attr.s
 class TrainRequest(object):
     measure = attr.ib(type=str, default="ndcg")
     params = attr.ib(type=CoordinateAscentParams, factory=CoordinateAscentParams)
-    judgments = attr.ib(type=QuerySetJudgments, default=None)
+    judgments = attr.ib(type=CQRel, default=None)
