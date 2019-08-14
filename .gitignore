@@ -24,3 +24,4 @@ Cargo.lock
 *.so
 *.dll
 *.dylib
+.mypy_cache

@@ -4,6 +4,9 @@ from cfastrank import lib, ffi
 import numpy as np
 from typing import Dict, Set, List
 
+# Keep in sync with fastrank/src/model.rs : fastrank::model::ModelEnum
+_MODEL_TYPES = ["SingleFeature", "Linear", "DecisionTree", "Ensemble"]
+
 
 def _handle_rust_str(result) -> str:
     """
@@ -73,8 +76,9 @@ class CQRel(object):
         return CQRel(_handle_c_result(lib.load_cqrel(path.encode("utf-8"))))
 
     @staticmethod
-    def from_dictionary(dictionaries: Dict[str, Dict[str, float]]) -> "CQRel":
-        return CQRel(_handle_c_result(lib.cqrel_from_json(json.dumps(dictionaries))))
+    def from_dict(dictionaries: Dict[str, Dict[str, float]]) -> "CQRel":
+        input_str = json.dumps(dictionaries).encode("utf-8")
+        return CQRel(_handle_c_result(lib.cqrel_from_json(input_str)))
 
     def _require_init(self):
         if self.pointer is None:
@@ -90,7 +94,7 @@ class CQRel(object):
         _maybe_raise_error_json(response)
         return response
 
-    def to_json(self) -> Dict[str, Dict[str, float]]:
+    def to_dict(self) -> Dict[str, Dict[str, float]]:
         return self._query_json("to_json")
 
     def queries(self) -> Set[str]:
@@ -105,9 +109,21 @@ class CQRel(object):
 
 
 class CModel(object):
-    def __init__(self, pointer, params):
+    def __init__(self, pointer, params=None):
         self.pointer = pointer
         self.params = params
+
+    @staticmethod
+    def _check_model_json(model_json: Dict):
+        [single_key] = list(model_json.keys())
+        assert single_key in _MODEL_TYPES
+        # TODO: deeper checks
+
+    @staticmethod
+    def from_dict(model_json: Dict) -> "CModel":
+        CModel._check_model_json(model_json)
+        json_str = json.dumps(model_json).encode("utf-8")
+        return CModel(_handle_c_result(lib.model_from_json(json_str)))
 
     def __del__(self):
         if self.pointer is not None:
@@ -128,7 +144,7 @@ class CModel(object):
         _maybe_raise_error_json(response)
         return response
 
-    def to_json(self):
+    def to_dict(self):
         return self._query_json("to_json")
 
     def __str__(self):
