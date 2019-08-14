@@ -12,4 +12,4 @@ time ./target/release/coordinate_ascent examples/trec_news_2018.train --seed=42 
 time ./target/release/train_random_forest examples/trec_news_2018.train --seed=42 --test=examples/trec_news_2018.test --feature_names examples/trec_news_2018.features.json -i 0 --quiet
 
 cd cfastrank && pyo3-pack develop -b cffi --release && cd -
-cd pyfastrank && python3 fastrank/__init__.py && cd -
+cd pyfastrank && PYTHONPATH=. python3 tests/smoke_test.py && cd -

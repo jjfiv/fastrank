@@ -43,8 +43,6 @@ impl DenseDataset {
             qid_nos.push(qid_no);
         }
 
-        println!("DenseDataset N={} D={}", n_instances, n_features);
-
         Ok(DenseDataset {
             n_instances,
             n_features,
