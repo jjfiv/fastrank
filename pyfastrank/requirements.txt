@@ -1,5 +1,5 @@
-attrs==19.1.0
-cffi==1.12.3
-numpy==1.17.0
-scikit-learn==0.21.3
-ujson==1.35
+attrs
+cffi
+numpy
+scikit-learn
+ujson
