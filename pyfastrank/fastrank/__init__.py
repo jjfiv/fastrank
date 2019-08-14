@@ -64,6 +64,36 @@ def _maybe_raise_error_json(response):
     return
 
 
+class CModel(object):
+    def __init__(self, pointer=None):
+        self.pointer = pointer
+
+    def __del__(self):
+        if self.pointer is not None:
+            lib.free_model(self.pointer)
+            self.pointer = None
+
+    def _require_init(self):
+        if self.pointer is None:
+            raise ValueError("CModel is null!")
+
+    def _query_json(self, message="num_features"):
+        self._require_init()
+        response = json.loads(
+            _handle_rust_str(
+                lib.query_model_json(self.pointer, message.encode("utf-8"))
+            )
+        )
+        _maybe_raise_error_json(response)
+        return response
+
+    def to_json(self):
+        return self._query_json("to_json")
+
+    def __str__(self):
+        return str(self.to_json())
+
+
 class CDataset(object):
     def __init__(self, pointer=None):
         self.pointer = pointer
@@ -136,15 +166,13 @@ class CDataset(object):
         )
         return child
 
-    def train_model(self, train_req: "TrainRequest") -> dict:
+    def train_model(self, train_req: "TrainRequest") -> CModel:
         self._require_init()
         train_req_str = json.dumps(train_req).encode("utf-8")
-        train_resp = json.loads(
-            _handle_rust_str(lib.train_model(train_req_str, self.pointer))
-        )
-        return train_resp
+        train_resp = _handle_c_result(lib.train_model(train_req_str, self.pointer))
+        return CModel(train_resp)
 
-    def __query_json(self, message="num_features"):
+    def _query_json(self, message="num_features"):
         self._require_init()
         response = json.loads(
             _handle_rust_str(
@@ -155,19 +183,19 @@ class CDataset(object):
         return response
 
     def num_features(self) -> int:
-        return self.__query_json("num_features")
+        return self._query_json("num_features")
 
     def feature_ids(self) -> Set[int]:
-        return set(self.__query_json("feature_ids"))
+        return set(self._query_json("feature_ids"))
 
     def feature_names(self) -> Set[str]:
-        return set(self.__query_json("feature_names"))
+        return set(self._query_json("feature_names"))
 
     def num_instances(self) -> int:
-        return self.__query_json("num_instances")
+        return self._query_json("num_instances")
 
     def queries(self) -> Set[str]:
-        return set(self.__query_json("queries"))
+        return set(self._query_json("queries"))
 
 
 @attr.s

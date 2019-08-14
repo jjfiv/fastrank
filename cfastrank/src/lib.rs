@@ -9,6 +9,7 @@ use fastrank::dataset::DatasetRef;
 use fastrank::dataset::RankingDataset;
 use fastrank::dense_dataset::DenseDataset;
 use fastrank::json_api::*;
+use fastrank::model::ModelEnum;
 use fastrank::sampling::DatasetSampling;
 use std::error::Error;
 use std::ffi::{CStr, CString};
@@ -24,6 +25,10 @@ struct ErrorMessage {
 pub struct CDataset {
     /// Reference to Rust-based Dataset.
     reference: Box<dyn RankingDataset>,
+}
+
+pub struct CModel {
+    actual: ModelEnum,
 }
 
 #[repr(C)]
@@ -55,6 +60,11 @@ pub extern "C" fn free_c_result(originally_from_rust: *mut CResult) {
 #[no_mangle]
 pub extern "C" fn free_dataset(originally_from_rust: *mut CDataset) {
     let _will_drop: Box<CDataset> = unsafe { Box::from_raw(originally_from_rust) };
+}
+
+#[no_mangle]
+pub extern "C" fn free_model(originally_from_rust: *mut CModel) {
+    let _will_drop: Box<CModel> = unsafe { Box::from_raw(originally_from_rust) };
 }
 
 /// Internal helper: convert string reference to pointer to be passed to Python/C. Heap allocation.
@@ -278,23 +288,32 @@ pub extern "C" fn make_dense_dataset_f32_f64_i64(
 }
 
 #[no_mangle]
-pub extern "C" fn train_model(json_cmd_str: *mut c_void, dataset: *mut c_void) -> *const c_void {
+pub extern "C" fn train_model(json_cmd_str: *mut c_void, dataset: *mut c_void) -> *const CResult {
     let dataset: Option<&CDataset> = unsafe { (dataset as *mut CDataset).as_ref() };
     let json_cmd_str: &CStr = unsafe { CStr::from_ptr(json_cmd_str as *mut c_char) };
 
-    let output = match result_train_model(json_cmd_str, dataset) {
-        Ok(message) => message,
-        Err(e) => format!("Error: {:?}", e),
+    let mut c_result = Box::new(CResult::default());
+    match result_train_model(json_cmd_str, dataset) {
+        Ok(m) => {
+            let c_model = Box::new(CModel { actual: m });
+            c_result.success = Box::into_raw(c_model) as *const c_void;
+        }
+        Err(e) => {
+            let error_message = serde_json::to_string(&ErrorMessage {
+                error: "error".to_string(),
+                context: format!("{:?}", e),
+            })
+            .unwrap();
+            c_result.error_message = return_string(&error_message);
+        }
     };
-
-    let c_output: CString = CString::new(output).expect("Conversion to CString should succeed!");
-    CString::into_raw(c_output) as *const c_void
+    Box::into_raw(c_result)
 }
 
 fn result_train_model(
     json_cmd_str: &CStr,
     dataset: Option<&CDataset>,
-) -> Result<String, Box<Error>> {
+) -> Result<ModelEnum, Box<Error>> {
     let train_request = json_cmd_str
         .to_str()
         .map_err(|_| "Could not convert your train_request string to UTF-8!")?;
@@ -304,6 +323,41 @@ fn result_train_model(
     };
 
     let train_request: TrainRequest = serde_json::from_str(train_request)?;
-    let response = do_training(train_request, dataset.reference.as_ref())?;
-    Ok(serde_json::to_string(&response)?)
+    Ok(do_training(train_request, dataset.reference.as_ref())?)
+}
+
+#[no_mangle]
+pub extern "C" fn query_model_json(model: *mut c_void, json_cmd_str: *mut c_void) -> *const c_void {
+    let model: Option<&CModel> = unsafe { (model as *mut CModel).as_ref() };
+    let json_cmd_str: &CStr = unsafe { CStr::from_ptr(json_cmd_str as *mut c_char) };
+    let output = match result_query_model_json(model, json_cmd_str) {
+        Ok(response) => response,
+        Err(e) => serde_json::to_string(&ErrorMessage {
+            error: "error".to_string(),
+            context: format!("{:?}", e),
+        })
+        .unwrap(),
+    };
+    let c_output: CString = CString::new(output).expect("Conversion to CString should succeed!");
+    CString::into_raw(c_output) as *const c_void
+}
+
+fn result_query_model_json(model: Option<&CModel>, query_str: &CStr) -> Result<String, Box<Error>> {
+    let model = match model {
+        Some(d) => d,
+        None => Err("Model pointer is null!")?,
+    };
+    let query_str: &str = query_str
+        .to_str()
+        .map_err(|_| "Could not convert your query string to UTF-8!")?;
+
+    let response = match query_str {
+        "to_json" => serde_json::to_string(&model.actual)?,
+        other => serde_json::to_string(&ErrorMessage {
+            error: "unknown_dataset_query_str".to_owned(),
+            context: other.to_owned(),
+        })?,
+    };
+
+    Ok(response)
 }

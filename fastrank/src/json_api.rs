@@ -28,25 +28,16 @@ pub enum FastRankModelParams {
     CoordinateAscent(CoordinateAscentParams),
 }
 
-#[derive(Serialize, Deserialize)]
-pub enum TrainResponse {
-    Error(String),
-    LearnedModel(ModelEnum),
-}
-
 pub fn do_training(
     train_request: TrainRequest,
     dataset: &dyn RankingDataset,
-) -> Result<TrainResponse, Box<Error>> {
+) -> Result<ModelEnum, Box<Error>> {
     let evaluator = SetEvaluator::create(
         dataset,
         train_request.measure.as_str(),
         train_request.judgments,
     )?;
     Ok(match train_request.params {
-        FastRankModelParams::CoordinateAscent(params) => {
-            let model = params.learn(dataset, &evaluator);
-            TrainResponse::LearnedModel(model)
-        }
+        FastRankModelParams::CoordinateAscent(params) => params.learn(dataset, &evaluator),
     })
 }
