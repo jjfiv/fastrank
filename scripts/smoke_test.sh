@@ -4,6 +4,9 @@ source venv/bin/activate
 
 set -eu
 
+pip install -r cfastrank/requirements.txt
+pip install -r pyfastrank/requirements.txt
+
 export RUST_BACKTRACE=1
 
 cargo build --release 
