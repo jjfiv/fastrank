@@ -183,7 +183,27 @@ impl SetEvaluator {
         return sum / n;
     }
 
-    fn evaluate_to_vec(&self, model: &dyn Model) -> Vec<f64> {
+    pub fn evaluate_to_map(&self, model: &dyn Model) -> HashMap<String, f64> {
+        let mut scores = HashMap::new();
+        for (qid, docs) in self.dataset.instances_by_query().iter() {
+            // Predict for every document:
+            let mut ranked_list: Vec<_> = docs
+                .iter()
+                .cloned()
+                .map(|index| {
+                    let score = self.dataset.score(index, model);
+                    let gain = self.dataset.gain(index);
+                    RankedInstance::new(score, gain, index)
+                })
+                .collect();
+            // Sort largest to smallest:
+            ranked_list.sort_unstable();
+            scores.insert(qid.to_owned(), self.evaluator.score(&qid, &ranked_list));
+        }
+        scores
+    }
+
+    pub fn evaluate_to_vec(&self, model: &dyn Model) -> Vec<f64> {
         let mut scores = Vec::new();
         for (qid, docs) in self.dataset.instances_by_query().iter() {
             // Predict for every document:

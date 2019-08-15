@@ -1,4 +1,5 @@
 use crate::dataset::{RankingDataset, SampledDatasetRef};
+use crate::FeatureId;
 use crate::InstanceId;
 use rand::prelude::*;
 use std::cmp;
@@ -12,8 +13,12 @@ pub trait DatasetSampling {
     /// This represents a deterministic sampling of instances.
     fn with_instances(&self, instances: &[InstanceId]) -> SampledDatasetRef;
 
-    /// This represents a determinisitc sampling of queries.
+    /// This represents a deterministic sampling of queries.
     fn with_queries(&self, queries: &[String]) -> SampledDatasetRef;
+
+    /// This represents a dataset sample with a deterministic subset of features.
+    /// Errors when no features remaining or features to keep not available.
+    fn with_features(&self, features: &[FeatureId]) -> Result<SampledDatasetRef, String>;
 
     fn train_test<R: Rng>(
         &self,
@@ -57,6 +62,31 @@ impl DatasetSampling for &dyn RankingDataset {
             parent: self.get_ref(),
             instances: instances.iter().cloned().collect(),
             features: self.features(),
+        }
+    }
+
+    /// This represents a dataset sample with a deterministic subset of features.
+    fn with_features(&self, features: &[FeatureId]) -> Result<SampledDatasetRef, String> {
+        let valid_features: HashSet<FeatureId> = self.features().into_iter().collect();
+        let mut keep_features = HashSet::new();
+        let mut missing_features = HashSet::new();
+        for fid in features {
+            if valid_features.contains(fid) {
+                keep_features.insert(fid);
+            } else {
+                missing_features.insert(fid);
+            }
+        }
+        if missing_features.len() > 0 {
+            Err(format!("Missing Features: {:?}", missing_features))
+        } else if keep_features.len() == 0 {
+            Err(format!("No Features!"))
+        } else {
+            Ok(SampledDatasetRef {
+                parent: self.get_ref(),
+                instances: self.instances(),
+                features: keep_features.into_iter().cloned().collect(),
+            })
         }
     }
 

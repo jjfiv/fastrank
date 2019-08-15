@@ -1,3 +1,5 @@
+attrs
 cffi
 numpy
-
+scikit-learn
+ujson
