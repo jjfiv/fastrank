@@ -440,7 +440,7 @@ mod test {
         let training_instances: Vec<Instance> = xs
             .iter()
             .enumerate()
-            .map(|(i, x)| Instance::new(ys[i], "query".to_string(), single_feature(*x)))
+            .map(|(i, x)| Instance::new(ys[i], "query".to_string(), None, single_feature(*x)))
             .collect();
 
         let dataset = DatasetRef::new(training_instances, None);

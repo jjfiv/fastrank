@@ -1,4 +1,5 @@
 import unittest
+import tempfile
 import numpy as np
 import ujson as json
 import sklearn
@@ -67,6 +68,7 @@ class TestRustAPI(unittest.TestCase):
         ca_params["init_random"] = True
         ca_params["seed"] = 42
         ca_params["quiet"] = True
+        cls.model = cls.rd.train_model(TestRustAPI.train_req)
 
     def test_cqrel_serialization(self):
         qrel = TestRustAPI.qrel.to_dict()
@@ -141,13 +143,13 @@ class TestRustAPI(unittest.TestCase):
 
     def test_train_model(self):
         rd = TestRustAPI.rd
-        model = rd.train_model(TestRustAPI.train_req)
+        model = TestRustAPI.model
         self.assertIsNotNone(model)
         model._require_init()
 
     def test_model_serialization(self):
         rd = TestRustAPI.rd
-        model = rd.train_model(TestRustAPI.train_req)
+        model = TestRustAPI.model
         self.assertIsNotNone(model)
         model._require_init()
         # ensure a deep measure is the same:
@@ -179,13 +181,22 @@ class TestRustAPI(unittest.TestCase):
 
     def test_evaluate(self):
         rd = TestRustAPI.rd
-        model = rd.train_model(TestRustAPI.train_req)
+        model = TestRustAPI.model
         # for this particular dataset, there should be no difference between calculating with and without qrels:
         ndcg5_with = np.mean(
             list(rd.evaluate(model, "ndcg@5", TestRustAPI.qrel).values())
         )
         ndcg5_without = np.mean(list(rd.evaluate(model, "ndcg@5").values()))
         assert abs(ndcg5_with - ndcg5_without) < 0.0000001
+    
+    def test_trecrun(self):
+        rd = TestRustAPI.rd
+        model = TestRustAPI.model
+        with tempfile.NamedTemporaryFile(mode='r') as tmpf:
+            with self.assertRaises(Exception) as context:
+                rd.predict_trecrun(model, tmpf.name)
+            self.assertRegex(str(context.exception), "Dataset does not contain document ids")
+
 
 
 if __name__ == "__main__":

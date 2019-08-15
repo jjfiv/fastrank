@@ -45,6 +45,7 @@ pub trait FeatureRead {
 pub struct Instance {
     pub gain: NotNan<f32>,
     pub qid: String,
+    pub docid: Option<String>,
     pub features: Features,
 }
 
@@ -92,10 +93,11 @@ impl FeatureRead for Features {
 }
 
 impl Instance {
-    pub fn new(gain: NotNan<f32>, qid: String, features: Features) -> Self {
+    pub fn new(gain: NotNan<f32>, qid: String, docid: Option<String>, features: Features) -> Self {
         Self {
             gain,
             qid,
+            docid,
             features,
         }
     }
@@ -122,6 +124,7 @@ impl Instance {
         Ok(Instance {
             gain: libsvm.label,
             qid: libsvm.query.ok_or("Missing qid")?,
+            docid: libsvm.comment,
             features,
         })
     }

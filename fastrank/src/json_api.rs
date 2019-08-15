@@ -1,8 +1,9 @@
+use crate::io_helper;
 use std::error::Error;
 
 use crate::coordinate_ascent::CoordinateAscentParams;
 use crate::dataset::RankingDataset;
-use crate::evaluators::SetEvaluator;
+use crate::evaluators::{RankedInstance, SetEvaluator};
 use crate::model::ModelEnum;
 use crate::qrel::QuerySetJudgments;
 
@@ -40,4 +41,47 @@ pub fn do_training(
     Ok(match train_request.params {
         FastRankModelParams::CoordinateAscent(params) => params.learn(dataset, &evaluator),
     })
+}
+
+/// Given a model and a dataset, save a trecrun file of predictions with a given system_name to output_path.
+pub fn predict_to_trecrun(
+    model: &ModelEnum,
+    dataset: &dyn RankingDataset,
+    output_path: &str,
+    system_name: &str,
+) -> Result<usize, Box<Error>> {
+    let mut output = io_helper::open_writer(output_path)?;
+    let mut records_written = 0;
+    for (qid, docs) in dataset.instances_by_query().iter() {
+        // Predict for every document:
+        let mut ranked_list: Vec<_> = docs
+            .iter()
+            .cloned()
+            .map(|index| {
+                let score = dataset.score(index, model);
+                let gain = dataset.gain(index);
+                RankedInstance::new(score, gain, index)
+            })
+            .collect();
+        // Sort largest to smallest:
+        ranked_list.sort_unstable();
+        for (i, sdoc) in ranked_list.iter().enumerate() {
+            let rank = i + 1;
+            let score = sdoc.score;
+            let docid = match dataset.document_name(sdoc.identifier) {
+                Some(x) => x,
+                None => Err(
+                    "Dataset does not contain document ids and therefore cannot save to trecrun!",
+                )?,
+            };
+            writeln!(
+                output,
+                "{} q {} {} {} {}",
+                qid, docid, rank, score, system_name
+            )?;
+            records_written += 1;
+        }
+        output.flush()?;
+    }
+    Ok(records_written)
 }

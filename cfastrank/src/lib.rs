@@ -226,3 +226,22 @@ pub extern "C" fn evaluate_by_query(
     let evaluator: Result<&str, Box<Error>> = accept_str("evaluator_name", evaluator);
     result_to_json(result_evaluate_by_query(model, dataset, qrel, evaluator))
 }
+
+#[no_mangle]
+pub extern "C" fn predict_to_trecrun(
+    model: *const CModel,
+    dataset: *const CDataset,
+    output_path: *const c_void,
+    system_name: *const c_void,
+) -> *const c_void {
+    let model: Option<&CModel> = unsafe { (model as *const CModel).as_ref() };
+    let dataset: Option<&CDataset> = unsafe { (dataset as *const CDataset).as_ref() };
+    let output_path: Result<&str, Box<Error>> = accept_str("output_path", output_path);
+    let system_name: Result<&str, Box<Error>> = accept_str("system_name", system_name);
+    result_to_json(result_predict_to_trecrun(
+        model,
+        dataset,
+        output_path,
+        system_name,
+    ))
+}

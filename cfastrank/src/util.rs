@@ -9,7 +9,8 @@ use fastrank::dataset;
 use fastrank::dataset::DatasetRef;
 use fastrank::dataset::RankingDataset;
 use fastrank::evaluators::SetEvaluator;
-use fastrank::json_api::*;
+use fastrank::json_api;
+use fastrank::json_api::{FastRankModelParams, TrainRequest};
 use fastrank::model::ModelEnum;
 use fastrank::qrel::QuerySetJudgments;
 use fastrank::sampling::DatasetSampling;
@@ -183,7 +184,10 @@ pub(crate) fn result_train_model(
         Some(d) => d,
         None => Err("Dataset pointer is null!")?,
     };
-    Ok(do_training(train_request?, dataset.reference.as_ref())?)
+    Ok(json_api::do_training(
+        train_request?,
+        dataset.reference.as_ref(),
+    )?)
 }
 
 pub(crate) fn result_model_query_json(
@@ -221,22 +225,36 @@ pub(crate) fn result_exec_json(query_str: Result<&str, Box<Error>>) -> Result<St
     Ok(response)
 }
 
+fn require_pointer<'a, T>(name: &str, pointer: Option<&'a T>) -> Result<&'a T, Box<Error>> {
+    let inner = match pointer {
+        Some(p) => p,
+        None => Err(format!("{} pointer is null!", name))?,
+    };
+    Ok(inner)
+}
+
 pub(crate) fn result_evaluate_by_query(
     model: Option<&CModel>,
     dataset: Option<&CDataset>,
     qrel: Option<&CQRel>,
     evaluator: Result<&str, Box<Error>>,
 ) -> Result<String, Box<Error>> {
-    let model = match model {
-        Some(d) => &d.actual,
-        None => Err("Model pointer is null!")?,
-    };
-    let dataset = match dataset {
-        Some(d) => d.reference.as_ref(),
-        None => Err("Model pointer is null!")?,
-    };
+    let model = &require_pointer("Model", model)?.actual;
+    let dataset = require_pointer("Dataset", dataset)?.reference.as_ref();
     let qrel = qrel.map(|cq| cq.actual.clone());
     let eval = SetEvaluator::create(dataset, evaluator?, qrel)?;
     let output = eval.evaluate_to_map(model);
     Ok(serde_json::to_string(&output)?)
+}
+
+pub(crate) fn result_predict_to_trecrun(
+    model: Option<&CModel>,
+    dataset: Option<&CDataset>,
+    output_path: Result<&str, Box<Error>>,
+    system_name: Result<&str, Box<Error>>,
+) -> Result<String, Box<Error>> {
+    let model = &require_pointer("Model", model)?.actual;
+    let dataset = require_pointer("Dataset", dataset)?.reference.as_ref();
+    let written = json_api::predict_to_trecrun(model, dataset, output_path?, system_name?)?;
+    Ok(serde_json::to_string(&written)?)
 }

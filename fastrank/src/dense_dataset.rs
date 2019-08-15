@@ -125,6 +125,10 @@ impl RankingDataset for DenseDataset {
         let qid_no = self.qids[id.to_index()];
         self.qid_strings[&qid_no].as_str()
     }
+    fn document_name(&self, _id: InstanceId) -> Option<&str> {
+        // TODO: someday support names array!
+        None
+    }
     fn queries(&self) -> Vec<String> {
         self.qid_strings.values().cloned().collect()
     }

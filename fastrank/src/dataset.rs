@@ -36,6 +36,8 @@ pub trait RankingDataset: Send + Sync {
     fn score(&self, id: InstanceId, model: &Model) -> NotNan<f64>;
     fn gain(&self, id: InstanceId) -> NotNan<f32>;
     fn query_id(&self, id: InstanceId) -> &str;
+    /// If the dataset has names, return Some(name)
+    fn document_name(&self, id: InstanceId) -> Option<&str>;
 
     fn queries(&self) -> Vec<String>;
     /// For printing, the name if available or the number.
@@ -73,6 +75,9 @@ impl RankingDataset for DatasetRef {
     }
     fn query_id(&self, id: InstanceId) -> &str {
         self.data.query_id(id)
+    }
+    fn document_name(&self, id: InstanceId) -> Option<&str> {
+        self.data.document_name(id)
     }
     fn instances_by_query(&self) -> HashMap<String, Vec<InstanceId>> {
         self.data.instances_by_query()
@@ -128,6 +133,9 @@ impl RankingDataset for SampledDatasetRef {
     }
     fn query_id(&self, id: InstanceId) -> &str {
         self.parent.query_id(id)
+    }
+    fn document_name(&self, id: InstanceId) -> Option<&str> {
+        self.parent.document_name(id)
     }
     fn queries(&self) -> Vec<String> {
         let mut out: HashSet<&str> = HashSet::new();
@@ -293,6 +301,12 @@ impl RankingDataset for LoadedRankingDataset {
     }
     fn query_id(&self, id: InstanceId) -> &str {
         self.instances[id.to_index()].qid.as_str()
+    }
+    fn document_name(&self, id: InstanceId) -> Option<&str> {
+        self.instances[id.to_index()]
+            .docid
+            .as_ref()
+            .map(|s| s.as_str())
     }
     fn try_lookup_feature(&self, name_or_num: &str) -> Result<FeatureId, Box<Error>> {
         try_lookup_feature(self, &self.feature_names, name_or_num)
