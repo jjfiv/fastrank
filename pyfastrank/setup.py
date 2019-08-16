@@ -1,20 +1,21 @@
-from setuptools import setup
+from setuptools import setup, find_packages
 
-version = '0.3.2'
+pyfastrank_version = '0.3.2'
+cfastrank_version = '0.3.2'
 
 setup(
     name='fastrank',
-    version=version,
+    version=pyfastrank_version,
     author="John Foley",
     author_email="jjfoley@smith.edu",
     classifiers=[
-        "Programming Language :: Python :: 3.5"
+        "Programming Language :: Python :: 3.5",
         "License :: OSI Approved :: MIT License",
         "Operating System :: OS Independent",
     ],
     description="A set of learning-to-rank algorithms.",
     url="https://github.com/jjfiv/fastrank",
-    packages=setuptools.find_packages(),
-    install_requires=['cfastrank=={0}'.format(version)],
+    packages=find_packages(),
+    install_requires=['cfastrank=={0}'.format(cfastrank_version), "attrs", "cffi", "numpy", "scikit-learn", "ujson"],
     platforms='any',
 )
