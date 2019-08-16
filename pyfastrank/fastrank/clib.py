@@ -148,7 +148,7 @@ class CModel(object):
         return self._query_json("to_json")
 
     def __str__(self):
-        return str(self.to_json())
+        return str(self.to_dict())
 
 
 class CDataset(object):

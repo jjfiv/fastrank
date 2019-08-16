@@ -1,6 +1,6 @@
 [package]
 name = "cfastrank"
-version = "0.2.0"
+version = "0.3.0"
 authors = ["John Foley <jjfoley@smith.edu>"]
 edition = "2018"
 description = "C API to FastRank Learning to Rank Library written in Rust."

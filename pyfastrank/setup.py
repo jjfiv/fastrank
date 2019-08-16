@@ -1,6 +1,6 @@
 from setuptools import setup
 
-version = '0.2.0'
+version = '0.3.0'
 
 setup(
     name='fastrank',
@@ -9,10 +9,12 @@ setup(
     author_email="jjfoley@smith.edu",
     classifiers=[
         "Programming Language :: Python :: 3.5"
+        "License :: OSI Approved :: MIT License",
+        "Operating System :: OS Independent",
     ],
     description="A set of learning-to-rank algorithms.",
     url="https://github.com/jjfiv/fastrank",
-    packages=['fastrank'],
+    packages=setuptools.find_packages(),
     install_requires=['cfastrank=={0}'.format(version)],
     platforms='any',
 )
