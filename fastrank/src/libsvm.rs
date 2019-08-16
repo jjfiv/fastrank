@@ -133,7 +133,7 @@ impl Instance {
         let data = match line.find('#') {
             Some(idx) => {
                 let (features, comment) = line.split_at(idx);
-                inst.comment = Some(comment[1..].to_owned());
+                inst.comment = Some(comment[1..].trim().to_owned());
                 features
             }
             None => line,

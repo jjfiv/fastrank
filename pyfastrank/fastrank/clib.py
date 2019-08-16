@@ -298,7 +298,7 @@ class CDataset(object):
         _maybe_raise_error_json(response)
         return response
 
-    def predict_trecrun(self, model: CModel, output_path: str, system_name: str = "fastrank") -> int:
+    def predict_trecrun(self, model: CModel, output_path: str, system_name: str = "fastrank", quiet=True) -> int:
         """Save output of model on this dataset to output_path with name system_name. Return the number of records written or raise an error."""
         self._require_init()
         model._require_init()
@@ -312,7 +312,8 @@ class CDataset(object):
             )
         )
         _maybe_raise_error_json(response)
-        print("Wrote {} records to {} as {}.", response, output_path, system_name)
+        if not quiet:
+            print("Wrote {} records to {} as {}.".format(response, output_path, system_name))
         return response
 
 
