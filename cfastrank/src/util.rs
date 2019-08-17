@@ -252,9 +252,10 @@ pub(crate) fn result_predict_to_trecrun(
     dataset: Option<&CDataset>,
     output_path: Result<&str, Box<Error>>,
     system_name: Result<&str, Box<Error>>,
+    depth: usize,
 ) -> Result<String, Box<Error>> {
     let model = &require_pointer("Model", model)?.actual;
     let dataset = require_pointer("Dataset", dataset)?.reference.as_ref();
-    let written = json_api::predict_to_trecrun(model, dataset, output_path?, system_name?)?;
+    let written = json_api::predict_to_trecrun(model, dataset, output_path?, system_name?, depth)?;
     Ok(serde_json::to_string(&written)?)
 }

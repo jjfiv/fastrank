@@ -298,8 +298,13 @@ class CDataset(object):
         _maybe_raise_error_json(response)
         return response
 
-    def predict_trecrun(self, model: CModel, output_path: str, system_name: str = "fastrank", quiet=True) -> int:
-        """Save output of model on this dataset to output_path with name system_name. Return the number of records written or raise an error."""
+    def predict_trecrun(self, model: CModel, output_path: str, system_name: str = "fastrank", quiet=True, depth=0) -> int:
+        """
+        Save output of model on this dataset to output_path with name system_name. 
+        Return the number of records written or raise an error.
+        Don't print success if ``quiet`` is True.
+        Only keep the best ``depth`` results per query unless depth is zero.
+        """
         self._require_init()
         model._require_init()
         output_path = output_path.encode('utf-8')
@@ -307,7 +312,7 @@ class CDataset(object):
         response = json.loads(
             _handle_rust_str(
                 lib.predict_to_trecrun(
-                    model.pointer, self.pointer, output_path, system_name
+                    model.pointer, self.pointer, output_path, system_name, depth
                 )
             )
         )

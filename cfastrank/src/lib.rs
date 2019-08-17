@@ -233,6 +233,7 @@ pub extern "C" fn predict_to_trecrun(
     dataset: *const CDataset,
     output_path: *const c_void,
     system_name: *const c_void,
+    depth: usize,
 ) -> *const c_void {
     let model: Option<&CModel> = unsafe { (model as *const CModel).as_ref() };
     let dataset: Option<&CDataset> = unsafe { (dataset as *const CDataset).as_ref() };
@@ -243,5 +244,6 @@ pub extern "C" fn predict_to_trecrun(
         dataset,
         output_path,
         system_name,
+        depth,
     ))
 }

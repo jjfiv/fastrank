@@ -49,6 +49,7 @@ pub fn predict_to_trecrun(
     dataset: &dyn RankingDataset,
     output_path: &str,
     system_name: &str,
+    depth: usize,
 ) -> Result<usize, Box<Error>> {
     let mut output = io_helper::open_writer(output_path)?;
     let mut records_written = 0;
@@ -67,6 +68,10 @@ pub fn predict_to_trecrun(
         ranked_list.sort_unstable();
         for (i, sdoc) in ranked_list.iter().enumerate() {
             let rank = i + 1;
+            // Logically, depth=0 is optional!
+            if depth > 0 && rank > depth {
+                break;
+            }
             let score = sdoc.score;
             let docid = match dataset.document_name(sdoc.identifier) {
                 Some(x) => x,
@@ -76,7 +81,7 @@ pub fn predict_to_trecrun(
             };
             writeln!(
                 output,
-                "{} q {} {} {} {}",
+                "{} Q0 {} {} {} {}",
                 qid, docid, rank, score, system_name
             )?;
             records_written += 1;
