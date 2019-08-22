@@ -188,15 +188,32 @@ class TestRustAPI(unittest.TestCase):
         )
         ndcg5_without = np.mean(list(rd.evaluate(model, "ndcg@5").values()))
         assert abs(ndcg5_with - ndcg5_without) < 0.0000001
-    
+
+    def test_sampled_evaluation(self):
+        rd = TestRustAPI.rd
+        model = TestRustAPI.model
+        measure = "ndcg@5"
+        measures_by_query = rd.evaluate(model, measure)
+
+        first_ten_queries = sorted(measures_by_query.keys())[:10]
+
+        partial = rd.subsample_queries(first_ten_queries)
+        print(partial.instances_by_query())
+
+        partial_scores = partial.evaluate(model, measure)
+        self.assertEqual(len(first_ten_queries), len(partial_scores))
+        for qid in first_ten_queries:
+            self.assertAlmostEqual(partial_scores[qid], measures_by_query[qid])
+
     def test_trecrun(self):
         rd = TestRustAPI.rd
         model = TestRustAPI.model
-        with tempfile.NamedTemporaryFile(mode='r') as tmpf:
+        with tempfile.NamedTemporaryFile(mode="r") as tmpf:
             with self.assertRaises(Exception) as context:
                 rd.predict_trecrun(model, tmpf.name)
-            self.assertRegex(str(context.exception), "Dataset does not contain document ids")
-
+            self.assertRegex(
+                str(context.exception), "Dataset does not contain document ids"
+            )
 
 
 if __name__ == "__main__":

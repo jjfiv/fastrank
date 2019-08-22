@@ -158,6 +158,7 @@ pub(crate) fn result_dataset_query_json(
         "feature_ids" => serde_json::to_string(&dataset.reference.features())?,
         "num_instances" => serde_json::to_string(&dataset.reference.instances().len())?,
         "queries" => serde_json::to_string(&dataset.reference.queries())?,
+        "instances_by_query" => serde_json::to_string(&dataset.reference.instances_by_query())?,
         "feature_names" => {
             let names = dataset
                 .reference

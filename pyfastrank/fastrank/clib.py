@@ -278,6 +278,9 @@ class CDataset(object):
     def queries(self) -> Set[str]:
         return set(self._query_json("queries"))
 
+    def instances_by_query(self) -> Dict[str, List[int]]:
+        return self._query_json("instances_by_query")
+
     def evaluate(
         self, model: CModel, evaluator: str, qrel: CQRel = None
     ) -> Dict[str, float]:
@@ -298,7 +301,14 @@ class CDataset(object):
         _maybe_raise_error_json(response)
         return response
 
-    def predict_trecrun(self, model: CModel, output_path: str, system_name: str = "fastrank", quiet=True, depth=0) -> int:
+    def predict_trecrun(
+        self,
+        model: CModel,
+        output_path: str,
+        system_name: str = "fastrank",
+        quiet=True,
+        depth=0,
+    ) -> int:
         """
         Save output of model on this dataset to output_path with name system_name. 
         Return the number of records written or raise an error.
@@ -307,8 +317,8 @@ class CDataset(object):
         """
         self._require_init()
         model._require_init()
-        output_path = output_path.encode('utf-8')
-        system_name = system_name.encode('utf-8')
+        output_path = output_path.encode("utf-8")
+        system_name = system_name.encode("utf-8")
         response = json.loads(
             _handle_rust_str(
                 lib.predict_to_trecrun(
@@ -318,9 +328,12 @@ class CDataset(object):
         )
         _maybe_raise_error_json(response)
         if not quiet:
-            print("Wrote {} records to {} as {}.".format(response, output_path, system_name))
+            print(
+                "Wrote {} records to {} as {}.".format(
+                    response, output_path, system_name
+                )
+            )
         return response
-
 
 
 def query_json(message: str):
