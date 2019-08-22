@@ -1,7 +1,7 @@
 from setuptools import setup, find_packages
 
-pyfastrank_version = '0.3.2'
-cfastrank_version = '0.3.2'
+pyfastrank_version = '0.3.3'
+cfastrank_version = '0.3.3'
 
 setup(
     name='fastrank',

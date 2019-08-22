@@ -200,6 +200,10 @@ impl CoordinateAscentParams {
     pub fn learn(&self, data: &dyn RankingDataset, evaluator: &SetEvaluator) -> ModelEnum {
         let mut rand = Xoshiro256StarStar::seed_from_u64(self.seed);
 
+        assert!(data.n_dim() > 0);
+        assert!(data.instances().len() > 0);
+        assert!(data.queries().len() > 0);
+
         if !self.quiet {
             println!("---------------------------");
             println!("Training starts...");

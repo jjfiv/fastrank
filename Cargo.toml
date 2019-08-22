@@ -1,8 +1,4 @@
 [workspace]
-# Recall: members are path names, not package names
-# Packages can be built in isolation with the flag -p
-# e.g., to build toybox-core (path "core"), run:
-# > cargo build -p toybox-core
 members = [
   "fastrank",
   "cfastrank",

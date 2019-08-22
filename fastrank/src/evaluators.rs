@@ -352,7 +352,7 @@ impl Evaluator for NDCG {
         let actual_gain_vector: Vec<_> = ranked_list.iter().map(|ri| ri.gain).collect();
 
         let normalizer = self.ideal_gains.get(qid).cloned().unwrap_or_else(|| {
-            if actual_gain_vector.is_empty() {
+            if actual_gain_vector.iter().filter(|g| g.into_inner() > 0.0).count() == 0 {
                 None
             } else {
                 Some(compute_dcg(&actual_gain_vector, self.depth, true))
