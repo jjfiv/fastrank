@@ -3,7 +3,7 @@
 #[macro_use]
 extern crate serde_derive;
 
-use fastrank::dataset::RankingDataset;
+use fastrank::dataset::DatasetRef;
 use fastrank::dense_dataset::DenseDataset;
 use fastrank::json_api::TrainRequest;
 use fastrank::model::ModelEnum;
@@ -20,7 +20,7 @@ use util::*;
 
 pub struct CDataset {
     /// Reference to Rust-based Dataset.
-    reference: Box<dyn RankingDataset>,
+    reference: DatasetRef,
 }
 
 pub struct CModel {
@@ -109,7 +109,7 @@ pub extern "C" fn load_ranksvm_format(
     };
     result_to_c(
         result_load_ranksvm_format(data_path, feature_names_path).map(|response| CDataset {
-            reference: Box::new(response),
+            reference: response,
         }),
     )
 }
@@ -176,7 +176,7 @@ pub extern "C" fn make_dense_dataset_f32_f64_i64(
     let qid_slice: &'static [i64] = unsafe { slice::from_raw_parts(qids, n) };
     result_to_c(
         DenseDataset::try_new(n, d, x_slice, y_slice, qid_slice).map(|dd| CDataset {
-            reference: Box::new(dd.into_ref()),
+            reference: dd.into_ref(),
         }),
     )
 }

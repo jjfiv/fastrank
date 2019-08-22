@@ -1,4 +1,4 @@
-use crate::dataset::{RankingDataset, SampledDatasetRef};
+use crate::dataset::{DatasetRef, RankingDataset};
 use crate::evaluators::SetEvaluator;
 use crate::model::{ModelEnum, TreeNode, WeightedEnsemble};
 use crate::normalizers::FeatureStats;
@@ -177,20 +177,20 @@ impl RecursionParams {
             current_depth: self.current_depth + 1,
         }
     }
-    fn done(&self, dataset: &RankingDataset) -> bool {
+    fn done(&self, dataset: &DatasetRef) -> bool {
         dataset.features().is_empty() || dataset.instances().is_empty()
     }
     fn choose_split(
         &self,
-        dataset: &RankingDataset,
+        dataset: &DatasetRef,
         fsc: &FeatureSplitCandidate,
-    ) -> (SampledDatasetRef, SampledDatasetRef) {
+    ) -> (DatasetRef, DatasetRef) {
         (
-            dataset.with_instances(&fsc.lhs),
-            dataset.with_instances(&fsc.rhs),
+            dataset.with_instances(&fsc.lhs).into_ref(),
+            dataset.with_instances(&fsc.rhs).into_ref(),
         )
     }
-    fn to_output(&self, dataset: &RankingDataset) -> NotNan<f64> {
+    fn to_output(&self, dataset: &DatasetRef) -> NotNan<f64> {
         compute_output(&dataset.instances(), dataset)
     }
 }
@@ -289,7 +289,7 @@ fn generate_split_candidate(
 
 pub fn learn_ensemble(
     params: &RandomForestParams,
-    dataset: &RankingDataset,
+    dataset: &DatasetRef,
     evaluator: &SetEvaluator,
 ) -> WeightedEnsemble {
     let mut rand = Xoshiro256StarStar::seed_from_u64(params.seed);
@@ -306,11 +306,13 @@ pub fn learn_ensemble(
 
     trees.par_extend(seeds.into_par_iter().map(|(idx, rand_seed)| {
         let mut rand = Xoshiro256StarStar::seed_from_u64(rand_seed);
-        let subsample = dataset.random_sample(
-            params.feature_sampling_rate,
-            params.instance_sampling_rate,
-            &mut rand,
-        );
+        let subsample = dataset
+            .random_sample(
+                params.feature_sampling_rate,
+                params.instance_sampling_rate,
+                &mut rand,
+            )
+            .into_ref();
         let tree = learn_decision_tree(params, &subsample);
         let eval = evaluator.evaluate_mean(&tree);
         if !params.quiet {
@@ -341,7 +343,7 @@ pub fn learn_ensemble(
     )
 }
 
-pub fn learn_decision_tree(params: &RandomForestParams, dataset: &RankingDataset) -> TreeNode {
+pub fn learn_decision_tree(params: &RandomForestParams, dataset: &DatasetRef) -> TreeNode {
     let step = RecursionParams { current_depth: 1 };
 
     let root = learn_recursive(params, dataset, &step);
@@ -364,7 +366,7 @@ enum NoTreeReason {
 
 fn learn_recursive(
     params: &RandomForestParams,
-    dataset: &RankingDataset,
+    dataset: &DatasetRef,
     step: &RecursionParams,
 ) -> Result<TreeNode, NoTreeReason> {
     // Gone too deep:

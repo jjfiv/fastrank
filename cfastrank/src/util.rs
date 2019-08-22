@@ -119,29 +119,27 @@ pub(crate) fn result_load_ranksvm_format(
 pub(crate) fn result_dataset_query_sampling(
     dataset: Option<&CDataset>,
     queries_json_list: Result<&str, Box<Error>>,
-) -> Result<Box<dyn RankingDataset>, Box<Error>> {
+) -> Result<DatasetRef, Box<Error>> {
     let dataset = match dataset {
         Some(d) => d,
         None => Err("Dataset pointer is null!")?,
     };
 
     let queries: Vec<String> = serde_json::from_str(queries_json_list?)?;
-    Ok(Box::new(dataset.reference.as_ref().with_queries(&queries)))
+    Ok(dataset.reference.with_queries(&queries).into_ref())
 }
 
 pub(crate) fn result_dataset_feature_sampling(
     dataset: Option<&CDataset>,
     feature_json_list: Result<&str, Box<Error>>,
-) -> Result<Box<dyn RankingDataset>, Box<Error>> {
+) -> Result<DatasetRef, Box<Error>> {
     let dataset = match dataset {
         Some(d) => d,
         None => Err("Dataset pointer is null!")?,
     };
     let features: Vec<FeatureId> = serde_json::from_str(feature_json_list?)?;
 
-    Ok(Box::new(
-        dataset.reference.as_ref().with_features(&features)?,
-    ))
+    Ok(dataset.reference.with_features(&features)?.into_ref())
 }
 
 pub(crate) fn result_dataset_query_json(
@@ -185,10 +183,7 @@ pub(crate) fn result_train_model(
         Some(d) => d,
         None => Err("Dataset pointer is null!")?,
     };
-    Ok(json_api::do_training(
-        train_request?,
-        dataset.reference.as_ref(),
-    )?)
+    Ok(json_api::do_training(train_request?, &dataset.reference)?)
 }
 
 pub(crate) fn result_model_query_json(
@@ -241,7 +236,7 @@ pub(crate) fn result_evaluate_by_query(
     evaluator: Result<&str, Box<Error>>,
 ) -> Result<String, Box<Error>> {
     let model = &require_pointer("Model", model)?.actual;
-    let dataset = require_pointer("Dataset", dataset)?.reference.as_ref();
+    let dataset = &require_pointer("Dataset", dataset)?.reference;
     let qrel = qrel.map(|cq| cq.actual.clone());
     let eval = SetEvaluator::create(dataset, evaluator?, qrel)?;
     let output = eval.evaluate_to_map(model);
@@ -256,7 +251,7 @@ pub(crate) fn result_predict_to_trecrun(
     depth: usize,
 ) -> Result<String, Box<Error>> {
     let model = &require_pointer("Model", model)?.actual;
-    let dataset = require_pointer("Dataset", dataset)?.reference.as_ref();
+    let dataset = &require_pointer("Dataset", dataset)?.reference;
     let written = json_api::predict_to_trecrun(model, dataset, output_path?, system_name?, depth)?;
     Ok(serde_json::to_string(&written)?)
 }

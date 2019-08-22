@@ -50,7 +50,6 @@ _EXPECTED_FEATURE_NAMES = set(
 class TestRustAPI(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        print("setUp!")
         cls.qrel = CQRel.load_file("../examples/newsir18-entity.qrel")
         cls.rd = CDataset.open_ranksvm(
             "../examples/trec_news_2018.train",
@@ -198,7 +197,7 @@ class TestRustAPI(unittest.TestCase):
         first_ten_queries = sorted(measures_by_query.keys())[:10]
 
         partial = rd.subsample_queries(first_ten_queries)
-        print(partial.instances_by_query())
+        self.assertEqual(len(partial.instances_by_query()), len(first_ten_queries))
 
         partial_scores = partial.evaluate(model, measure)
         self.assertEqual(len(first_ten_queries), len(partial_scores))

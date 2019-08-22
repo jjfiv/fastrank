@@ -77,8 +77,9 @@ impl FeatureRead for DenseDatasetInstance<'_> {
 }
 
 impl RankingDataset for DenseDataset {
-    fn get_ref(&self) -> DatasetRef {
-        panic!("Use into_ref() instead!")
+    fn get_ref(&self) -> Option<DatasetRef> {
+        None
+        //panic!("Use into_ref() instead!")
     }
     fn features(&self) -> Vec<FeatureId> {
         (0..self.n_features)

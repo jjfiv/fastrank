@@ -2,7 +2,7 @@ use crate::io_helper;
 use std::error::Error;
 
 use crate::coordinate_ascent::CoordinateAscentParams;
-use crate::dataset::RankingDataset;
+use crate::dataset::{DatasetRef, RankingDataset};
 use crate::evaluators::{RankedInstance, SetEvaluator};
 use crate::model::ModelEnum;
 use crate::qrel::QuerySetJudgments;
@@ -31,7 +31,7 @@ pub enum FastRankModelParams {
 
 pub fn do_training(
     train_request: TrainRequest,
-    dataset: &dyn RankingDataset,
+    dataset: &DatasetRef,
 ) -> Result<ModelEnum, Box<Error>> {
     let evaluator = SetEvaluator::create(
         dataset,

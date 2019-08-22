@@ -106,7 +106,7 @@ impl SetEvaluator {
     pub fn print_standard_eval(
         split_name: &str,
         model: &Model,
-        dataset: &RankingDataset,
+        dataset: &DatasetRef,
         judgments: &Option<QuerySetJudgments>,
     ) {
         println!("{} Performance:", split_name);
@@ -130,7 +130,7 @@ impl SetEvaluator {
     }
 
     pub fn create(
-        dataset: &dyn RankingDataset,
+        dataset: &DatasetRef,
         orig_name: &str,
         judgments: Option<QuerySetJudgments>,
     ) -> Result<SetEvaluator, Box<std::error::Error>> {
@@ -144,7 +144,7 @@ impl SetEvaluator {
             (orig_name.to_lowercase(), None)
         };
         Ok(SetEvaluator {
-            dataset: dataset.get_ref(),
+            dataset: dataset.clone(),
             evaluator: match name.as_str() {
                 "ap" | "map" => Arc::new(AveragePrecision::new(dataset, judgments.clone())),
                 "rr" | "mrr" => Arc::new(ReciprocalRank),
@@ -304,7 +304,7 @@ pub struct NDCG {
 impl NDCG {
     pub fn new(
         depth: Option<usize>,
-        dataset: &dyn RankingDataset,
+        dataset: &DatasetRef,
         judgments: Option<QuerySetJudgments>,
     ) -> Self {
         let mut query_norms: HashMap<String, Option<f64>> = HashMap::new();
@@ -383,7 +383,7 @@ pub struct AveragePrecision {
 }
 
 impl AveragePrecision {
-    pub fn new(dataset: &dyn RankingDataset, judgments: Option<QuerySetJudgments>) -> Self {
+    pub fn new(dataset: &DatasetRef, judgments: Option<QuerySetJudgments>) -> Self {
         let mut query_norms = HashMap::new();
 
         for (qid, instance_ids) in dataset.instances_by_query().iter() {

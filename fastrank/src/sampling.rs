@@ -1,4 +1,4 @@
-use crate::dataset::{RankingDataset, SampledDatasetRef};
+use crate::dataset::{RankingDataset, DatasetRef, SampledDatasetRef};
 use crate::FeatureId;
 use crate::InstanceId;
 use rand::prelude::*;
@@ -27,7 +27,13 @@ pub trait DatasetSampling {
     ) -> (SampledDatasetRef, SampledDatasetRef);
 }
 
-impl DatasetSampling for &dyn RankingDataset {
+impl DatasetRef {
+    fn get_ref_or_clone(&self) -> DatasetRef {
+        self.get_ref().unwrap_or(self.clone())
+    }
+}
+
+impl DatasetSampling for DatasetRef {
     fn random_sample<R: Rng>(&self, frate: f64, srate: f64, rand: &mut R) -> SampledDatasetRef {
         let features = self.features();
         let queries = self.queries();
@@ -52,14 +58,14 @@ impl DatasetSampling for &dyn RankingDataset {
         }
 
         SampledDatasetRef {
-            parent: self.get_ref(),
+            parent: self.clone(),
             features,
             instances,
         }
     }
     fn with_instances(&self, instances: &[InstanceId]) -> SampledDatasetRef {
         SampledDatasetRef {
-            parent: self.get_ref(),
+            parent: self.get_ref_or_clone(),
             instances: instances.iter().cloned().collect(),
             features: self.features(),
         }
@@ -83,7 +89,7 @@ impl DatasetSampling for &dyn RankingDataset {
             Err(format!("No Features!"))
         } else {
             Ok(SampledDatasetRef {
-                parent: self.get_ref(),
+                parent: self.get_ref_or_clone(),
                 instances: self.instances(),
                 features: keep_features.into_iter().cloned().collect(),
             })
@@ -101,7 +107,7 @@ impl DatasetSampling for &dyn RankingDataset {
         }
 
         SampledDatasetRef {
-            parent: self.get_ref(),
+            parent: self.get_ref_or_clone(),
             instances,
             features: self.features(),
         }

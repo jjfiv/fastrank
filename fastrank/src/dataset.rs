@@ -27,7 +27,7 @@ pub fn load_feature_names_json(
 }
 
 pub trait RankingDataset: Send + Sync {
-    fn get_ref(&self) -> DatasetRef;
+    fn get_ref(&self) -> Option<DatasetRef>;
     fn features(&self) -> Vec<FeatureId>;
     fn n_dim(&self) -> u32;
     fn instances(&self) -> Vec<InstanceId>;
@@ -55,8 +55,8 @@ pub struct DatasetRef {
 }
 /// Just proxy these requests to the inner (expensive-copy) implementation.
 impl RankingDataset for DatasetRef {
-    fn get_ref(&self) -> DatasetRef {
-        self.clone()
+    fn get_ref(&self) -> Option<DatasetRef> {
+        Some(self.data.get_ref().unwrap_or(self.clone()))
     }
     fn features(&self) -> Vec<FeatureId> {
         self.data.features()
@@ -103,9 +103,15 @@ pub struct SampledDatasetRef {
     pub instances: Vec<InstanceId>,
 }
 
+impl SampledDatasetRef {
+    pub fn into_ref(self) -> DatasetRef {
+        DatasetRef { data: Arc::new(self) }
+    }
+}
+
 impl RankingDataset for SampledDatasetRef {
-    fn get_ref(&self) -> DatasetRef {
-        self.parent.clone()
+    fn get_ref(&self) -> Option<DatasetRef> {
+        self.parent.get_ref()
     }
     fn features(&self) -> Vec<FeatureId> {
         self.features.clone()
@@ -260,8 +266,9 @@ impl LoadedRankingDataset {
 }
 
 impl RankingDataset for LoadedRankingDataset {
-    fn get_ref(&self) -> DatasetRef {
-        panic!("This is too expensive!")
+    fn get_ref(&self) -> Option<DatasetRef> {
+        None
+        //panic!("This is too expensive!")
     }
     fn features(&self) -> Vec<FeatureId> {
         self.features.clone()
