@@ -4,6 +4,7 @@ use std::error::Error;
 use std::ffi::CStr;
 use std::ffi::CString;
 
+use fastrank::random_forest::RandomForestParams;
 use fastrank::coordinate_ascent::CoordinateAscentParams;
 use fastrank::dataset;
 use fastrank::dataset::DatasetRef;
@@ -210,6 +211,11 @@ pub(crate) fn result_exec_json(query_str: Result<&str, Box<Error>>) -> Result<St
         "coordinate_ascent_defaults" => serde_json::to_string(&TrainRequest {
             measure: "ndcg".to_string(),
             params: FastRankModelParams::CoordinateAscent(CoordinateAscentParams::default()),
+            judgments: None,
+        })?,
+        "random_forest_defaults" => serde_json::to_string(&TrainRequest {
+            measure: "ndcg".to_string(),
+            params: FastRankModelParams::RandomForest(RandomForestParams::default()),
             judgments: None,
         })?,
         other => serde_json::to_string(&ErrorMessage {

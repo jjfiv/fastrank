@@ -13,7 +13,7 @@ use rand_xoshiro::Xoshiro256StarStar;
 use rayon::prelude::*;
 use std::cmp;
 
-#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 pub enum SplitSelectionStrategy {
     SquaredError(),
     BinaryGiniImpurity(),
@@ -127,7 +127,7 @@ impl SplitSelectionStrategy {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct RandomForestParams {
     pub seed: u64,
     pub quiet: bool,
@@ -304,13 +304,13 @@ pub fn learn_ensemble(
         println!("-----------------------");
     }
 
-    trees.par_extend(seeds.into_par_iter().map(|(idx, rand_seed)| {
-        let mut rand = Xoshiro256StarStar::seed_from_u64(rand_seed);
+    trees.par_extend(seeds.par_iter().map(|(idx, rand_seed)| {
+        let mut local_rand = Xoshiro256StarStar::seed_from_u64(*rand_seed);
         let subsample = dataset
             .random_sample(
                 params.feature_sampling_rate,
                 params.instance_sampling_rate,
-                &mut rand,
+                &mut local_rand,
             )
             .into_ref();
         let tree = learn_decision_tree(params, &subsample);

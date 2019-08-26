@@ -145,6 +145,29 @@ class TestRustAPI(unittest.TestCase):
         model = TestRustAPI.model
         self.assertIsNotNone(model)
         model._require_init()
+    
+    def test_random_forest(self):
+        rd = TestRustAPI.rd
+        train_req = query_json("random_forest_defaults")
+        rf_params = train_req["params"]["RandomForest"]
+        rf_params["num_trees"] = 50
+        rf_params["seed"] = 42
+        rf_params["quiet"] = False
+
+        self.assertEqual(train_req['params']['RandomForest']['num_trees'], 50)
+        self.assertEqual(train_req['params']['RandomForest']['seed'], 42)
+        model = rd.train_model(train_req)
+        self.assertEqual(len(model.to_dict()['Ensemble']['weights']), 50)
+        # for this particular dataset, there should be no difference between calculating with and without qrels:
+        ndcg5_with = np.mean(
+            list(rd.evaluate(model, "ndcg@5", TestRustAPI.qrel).values())
+        )
+        ndcg5_without = np.mean(list(rd.evaluate(model, "ndcg@5").values()))
+        self.assertAlmostEqual(ndcg5_with, ndcg5_without)
+        # TODO: some kind of entropy leftover in RandomForest not controlled by seed...
+        #self.assertAlmostEqual(ndcg5_with, 0.597)
+        #print("RandomForest-NDCG5: %f" % ndcg5_with)
+        
 
     def test_model_serialization(self):
         rd = TestRustAPI.rd
