@@ -156,7 +156,7 @@ class TestRustAPI(unittest.TestCase):
         rf_params["min_leaf_support"] = 1
         rf_params["max_depth"] = 10
         rf_params["split_candidates"] = 32
-        rf_params["quiet"] = False
+        rf_params["quiet"] = True
 
         self.assertEqual(train_req["params"]["RandomForest"]["num_trees"], 10)
         self.assertEqual(train_req["params"]["RandomForest"]["seed"], 42)
@@ -172,11 +172,9 @@ class TestRustAPI(unittest.TestCase):
             ndcg5_without = np.mean(list(rd.evaluate(model, "ndcg@5").values()))
             self.assertAlmostEqual(ndcg5_with, ndcg5_without)
             measures.append(ndcg5_with)
-        print(measures)
         for m in measures:
             # SemVer change-detection: need to bump major version if this is no longer true!
             self.assertAlmostEqual(m, 0.623710993892094)
-        # print("RandomForest-NDCG5: %f" % ndcg5_with)
 
     def test_model_serialization(self):
         rd = TestRustAPI.rd
