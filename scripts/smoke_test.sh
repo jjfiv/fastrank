@@ -4,6 +4,8 @@ source venv/bin/activate
 
 set -eu
 
+cargo test
+
 pip install -r cfastrank/requirements.txt
 pip install -r pyfastrank/requirements.txt
 

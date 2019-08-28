@@ -175,7 +175,7 @@ class TestRustAPI(unittest.TestCase):
         print(measures)
         for m in measures:
             # SemVer change-detection: need to bump major version if this is no longer true!
-            self.assertAlmostEqual(m, 0.601409466504946)
+            self.assertAlmostEqual(m, 0.623710993892094)
         # print("RandomForest-NDCG5: %f" % ndcg5_with)
 
     def test_model_serialization(self):

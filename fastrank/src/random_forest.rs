@@ -464,7 +464,7 @@ mod test {
             }
         }
         // If this assertion fails and you're OK with it, you just broke SemVer; upgrade major version.
-        assert_float_eq("means[0] = predefined", means[0], 0.6505209063677585);
+        assert_float_eq("means[0] = predefined", means[0], 0.623710993892094);
     }
 
     #[test]
