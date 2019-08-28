@@ -415,6 +415,7 @@ fn learn_recursive(
 #[cfg(test)]
 mod test {
     use super::*;
+    use crate::dataset;
     use crate::dataset::DatasetRef;
     use crate::instance::{Features, Instance};
 
@@ -425,6 +426,42 @@ mod test {
     fn assert_float_eq(attr: &str, x: f64, y: f64) {
         if (x - y).abs() > DELTA {
             panic!("{} failure: {} != {} at tolerance={}", attr, x, y, DELTA);
+        }
+    }
+
+    #[test]
+    fn test_random_forest_determinism() {
+        let feature_names =
+            dataset::load_feature_names_json("../examples/trec_news_2018.features.json").unwrap();
+        let train_dataset = dataset::LoadedRankingDataset::load_libsvm(
+            "../examples/trec_news_2018.train",
+            Some(&feature_names),
+        )
+        .unwrap()
+        .into_ref();
+        let params = RandomForestParams {
+            num_trees: 10,
+            seed: 42,
+            min_leaf_support: 1,
+            quiet: true,
+            max_depth: 10,
+            split_candidates: 32,
+            split_method: SplitSelectionStrategy::SquaredError(),
+            ..RandomForestParams::default()
+        };
+
+        let eval = SetEvaluator::create(&train_dataset, "ndcg@5", None).unwrap();
+        let mut means = Vec::new();
+        for i in 0..10 {
+            let model = learn_ensemble(&params, &train_dataset, &eval);
+            means.push(eval.evaluate_mean(&model));
+            if i > 0 {
+                assert_float_eq(
+                    &format!("means[{}] == means[{}]", i - 1, i),
+                    means[i - 1],
+                    means[i],
+                );
+            }
         }
     }
 
