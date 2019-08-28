@@ -1,13 +1,13 @@
 use crate::io_helper;
 use std::error::Error;
 
-use crate::random_forest;
-use crate::random_forest::RandomForestParams;
 use crate::coordinate_ascent::CoordinateAscentParams;
 use crate::dataset::{DatasetRef, RankingDataset};
 use crate::evaluators::{RankedInstance, SetEvaluator};
 use crate::model::ModelEnum;
 use crate::qrel::QuerySetJudgments;
+use crate::random_forest;
+use crate::random_forest::RandomForestParams;
 
 #[derive(Serialize, Deserialize)]
 pub struct TrainRequest {
@@ -29,7 +29,7 @@ impl Default for TrainRequest {
 #[derive(Serialize, Deserialize)]
 pub enum FastRankModelParams {
     CoordinateAscent(CoordinateAscentParams),
-    RandomForest(RandomForestParams)
+    RandomForest(RandomForestParams),
 }
 
 pub fn do_training(
@@ -43,7 +43,9 @@ pub fn do_training(
     )?;
     Ok(match train_request.params {
         FastRankModelParams::CoordinateAscent(params) => params.learn(dataset, &evaluator),
-        FastRankModelParams::RandomForest(params) => ModelEnum::Ensemble(random_forest::learn_ensemble(&params, dataset, &evaluator)),
+        FastRankModelParams::RandomForest(params) => {
+            ModelEnum::Ensemble(random_forest::learn_ensemble(&params, dataset, &evaluator))
+        }
     })
 }
 

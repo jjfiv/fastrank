@@ -463,6 +463,8 @@ mod test {
                 );
             }
         }
+        // If this assertion fails and you're OK with it, you just broke SemVer; upgrade major version.
+        assert_float_eq("means[0] = predefined", means[0], 0.6505209063677585);
     }
 
     #[test]
@@ -493,7 +495,6 @@ mod test {
         };
         let tree = learn_decision_tree(&params, &dataset);
 
-        eprintln!("{:?}", tree);
         for inst in dataset.instances() {
             let py = dataset.score(inst, &tree);
             assert_float_eq(

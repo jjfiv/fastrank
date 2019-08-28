@@ -4,7 +4,6 @@ use std::error::Error;
 use std::ffi::CStr;
 use std::ffi::CString;
 
-use fastrank::random_forest::RandomForestParams;
 use fastrank::coordinate_ascent::CoordinateAscentParams;
 use fastrank::dataset;
 use fastrank::dataset::DatasetRef;
@@ -14,6 +13,7 @@ use fastrank::json_api;
 use fastrank::json_api::{FastRankModelParams, TrainRequest};
 use fastrank::model::ModelEnum;
 use fastrank::qrel::QuerySetJudgments;
+use fastrank::random_forest::RandomForestParams;
 use fastrank::sampling::DatasetSampling;
 use fastrank::FeatureId;
 

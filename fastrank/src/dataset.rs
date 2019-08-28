@@ -105,7 +105,9 @@ pub struct SampledDatasetRef {
 
 impl SampledDatasetRef {
     pub fn into_ref(self) -> DatasetRef {
-        DatasetRef { data: Arc::new(self) }
+        DatasetRef {
+            data: Arc::new(self),
+        }
     }
 }
 

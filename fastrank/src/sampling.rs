@@ -1,4 +1,4 @@
-use crate::dataset::{RankingDataset, DatasetRef, SampledDatasetRef};
+use crate::dataset::{DatasetRef, RankingDataset, SampledDatasetRef};
 use crate::FeatureId;
 use crate::InstanceId;
 use rand::prelude::*;
@@ -35,8 +35,12 @@ impl DatasetRef {
 
 impl DatasetSampling for DatasetRef {
     fn random_sample<R: Rng>(&self, frate: f64, srate: f64, rand: &mut R) -> SampledDatasetRef {
-        let features = self.features();
-        let queries = self.queries();
+        let mut features = self.features();
+        let mut queries = self.queries();
+
+        // By sorting here, we're being defensive against the fact that features and queries were likely to have been collected into a set or hashset at some point. This will lead to non-deterministic ordering separate from the seed! When we sample from that, we end up getting different samples despite having the exact same RNG states!
+        queries.sort_unstable();
+        features.sort_unstable();
 
         let n_features = cmp::max(1, ((features.len() as f64) * frate) as usize);
         let n_queries = cmp::max(1, ((queries.len() as f64) * srate) as usize);
