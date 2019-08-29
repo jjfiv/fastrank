@@ -72,7 +72,7 @@ class TrainRequest(object):
     """
 
     measure = attr.ib(type=str, default="ndcg")
-    params: Union[CoordinateAscentParams, RandomForestParams] = attr.ib(
+    params= attr.ib(type=Union[CoordinateAscentParams, RandomForestParams],
         factory=CoordinateAscentParams
     )
     judgments = attr.ib(type=CQRel, default=None)
