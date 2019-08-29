@@ -131,6 +131,7 @@ class CModel(object):
     - training a new model on a dataset: :func:`~fastrank.clib.CDataset.train_model`.
     - loading a saved model from a file, using :func:`~from_dict`.
     """
+
     def __init__(self, pointer, params=None):
         self.pointer = pointer
         self.params = params
@@ -192,6 +193,7 @@ class CDataset(object):
      - :func:`~open_ranksvm` a file in ranksvm/ranklib/libsvm/svmlight format.
      - :func:`~from_numpy` with pre-loaded/pre-created numpy arrays.
     """
+
     def __init__(self, pointer=None):
         self.pointer = pointer
         # need to hold onto any numpy arrays...
@@ -320,14 +322,14 @@ class CDataset(object):
         child.numpy_arrays_to_keep = self.numpy_arrays_to_keep
         return child
 
-    def train_model(self, train_req: Dict) -> CModel:
+    def train_model(self, train_req: "TrainRequest") -> CModel:
         """
         Train a Model on this Dataset.
         
         TODO: make this accept a :class:`~fastrank.TrainRequest` object.
         """
         self._require_init()
-        train_req_str = json.dumps(train_req).encode("utf-8")
+        train_req_str = json.dumps(train_req.to_dict()).encode("utf-8")
         train_resp = _handle_c_result(lib.train_model(train_req_str, self.pointer))
         return CModel(train_resp, train_req)
 

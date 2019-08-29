@@ -5,7 +5,7 @@ import ujson as json
 import sklearn
 from sklearn.datasets import load_svmlight_file
 from collections import Counter
-from fastrank import CQRel, CDataset, CModel, query_json
+from fastrank import CQRel, CDataset, CModel, query_json, TrainRequest
 import copy
 
 _FEATURE_EXPECTED_NDCG5 = {
@@ -62,11 +62,10 @@ class TestRustAPI(unittest.TestCase):
             zero_based=False,
             query_id=True,
         )
-        cls.train_req = query_json("coordinate_ascent_defaults")
-        ca_params = cls.train_req["params"]["CoordinateAscent"]
-        ca_params["init_random"] = True
-        ca_params["seed"] = 42
-        ca_params["quiet"] = True
+        cls.train_req = TrainRequest.coordinate_ascent()
+        ca_params = cls.train_req.params
+        ca_params.seed = 42
+        ca_params.quiet = True
         cls.model = cls.rd.train_model(TestRustAPI.train_req)
 
     def test_cqrel_serialization(self):
@@ -114,17 +113,17 @@ class TestRustAPI(unittest.TestCase):
         rd = TestRustAPI.rd
         name_to_index = rd.feature_name_to_index()
         # single feature model:
-        params = copy.deepcopy(TestRustAPI.train_req)
-        lp = params["params"]["CoordinateAscent"]
-        lp["num_restarts"] = 1
-        lp["num_max_iterations"] = 1
-        lp["step_base"] = 1.0
-        lp["normalize"] = False
-        lp["init_random"] = False
+        train_req = TestRustAPI.train_req.clone()
+        lp = train_req.params
+        lp.num_restarts = 1
+        lp.num_max_iterations = 1
+        lp.step_base = 1.0
+        lp.normalize = False
+        lp.init_random = False
         feature_scores = {}
         for feature in _EXPECTED_FEATURE_NAMES:
             rd_single = rd.subsample_feature_names([feature])
-            model = rd_single.train_model(params)
+            model = rd_single.train_model(train_req)
             feature_scores[feature] = np.mean(
                 list(rd.evaluate(model, "ndcg@5").values())
             )
@@ -148,21 +147,17 @@ class TestRustAPI(unittest.TestCase):
 
     def test_random_forest(self):
         rd = TestRustAPI.rd
-        train_req = query_json("random_forest_defaults")
-        train_req["measure"] = "ndcg@5"
-        rf_params = train_req["params"]["RandomForest"]
-        rf_params["num_trees"] = 10
-        rf_params["seed"] = 42
-        rf_params["min_leaf_support"] = 1
-        rf_params["max_depth"] = 10
-        rf_params["split_candidates"] = 32
-        rf_params["quiet"] = True
-
-        self.assertEqual(train_req["params"]["RandomForest"]["num_trees"], 10)
-        self.assertEqual(train_req["params"]["RandomForest"]["seed"], 42)
+        train_req = TrainRequest.random_forest()
+        train_req.measure = "ndcg@5"
+        train_req.params.num_trees = 10
+        train_req.params.seed = 42
+        train_req.params.min_leaf_support = 1
+        train_req.params.max_depth = 10
+        train_req.params.split_candidates = 32
+        train_req.params.quiet = True
 
         measures = []
-        for iter in range(10):
+        for _ in range(10):
             model = rd.train_model(train_req)
             self.assertEqual(len(model.to_dict()["Ensemble"]["weights"]), 10)
             # for this particular dataset, there should be no difference between calculating with and without qrels:
@@ -243,6 +238,27 @@ class TestRustAPI(unittest.TestCase):
             self.assertRegex(
                 str(context.exception), "Dataset does not contain document ids"
             )
+
+    def train_req_object(self):
+        rust = TrainRequest.from_dict(query_json("coordinate_ascent_defaults"))
+        py = TrainRequest()
+
+        for _ in range(2):
+            self.assertEqual(rust.measure, py.measure)
+            self.assertEqual(rust.judgments, py.judgments)
+            self.assertEqual(rust.params.num_restarts, py.params.num_restarts)
+            self.assertEqual(
+                rust.params.num_max_iterations, py.params.num_max_iterations
+            )
+            self.assertAlmostEqual(rust.params.step_base, py.params.step_base)
+            self.assertAlmostEqual(rust.params.step_scale, py.params.step_scale)
+            self.assertAlmostEqual(rust.params.tolerance, py.params.tolerance)
+            self.assertEqual(rust.params.init_random, py.params.init_random)
+            self.assertEqual(rust.params.output_ensemble, py.params.output_ensemble)
+            self.assertEqual(rust.params.quiet, py.params.quiet)
+
+            # no serialization issues!
+            py = TrainRequest.from_dict(py.to_dict())
 
 
 if __name__ == "__main__":

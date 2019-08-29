@@ -32,9 +32,9 @@ impl Default for CoordinateAscentParams {
             step_scale: 2.0,
             tolerance: 0.001,
             seed: thread_rng().next_u64(),
-            normalize: false,
+            normalize: true,
             quiet: false,
-            init_random: false,
+            init_random: true,
             output_ensemble: false,
         }
     }
