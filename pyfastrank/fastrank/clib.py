@@ -62,7 +62,18 @@ def _maybe_raise_error_json(response):
 
 
 class CQRel(object):
+    """
+    This class represents a loaded set of TREC relevance judgments. 
+    
+    This is important because some measures supported by fastrank require the total number of relevance judgments (e.g., MAP) or the maximum ideal gain (e.g., NDCG).
+
+    Use :func:`~load_file` or :func:`~from_dict` to create one of these.
+    """
+
     def __init__(self, pointer=None):
+        """
+        This constructor is essentially private; it expects a pointer from a CFFI call.
+        """
         self.pointer = pointer
         self._queries = None
 
@@ -73,10 +84,12 @@ class CQRel(object):
 
     @staticmethod
     def load_file(path: str) -> "CQRel":
+        """Given a path to a TREC judgments file, load it into memory."""
         return CQRel(_handle_c_result(lib.load_cqrel(path.encode("utf-8"))))
 
     @staticmethod
     def from_dict(dictionaries: Dict[str, Dict[str, float]]) -> "CQRel":
+        """Given a mapping of (qid -> (doc -> judgment)) pass it over to Rust."""
         input_str = json.dumps(dictionaries).encode("utf-8")
         return CQRel(_handle_c_result(lib.cqrel_from_json(input_str)))
 
@@ -95,20 +108,29 @@ class CQRel(object):
         return response
 
     def to_dict(self) -> Dict[str, Dict[str, float]]:
+        """Convert this object to a mapping of (qid -> (doc -> judgment)) for use in Python."""
         return self._query_json("to_json")
 
     def queries(self) -> Set[str]:
+        """Get a list of judged queries from this object."""
         if self._queries is None:
             self._queries = set(self._query_json("queries"))
         return self._queries
 
-    def query_json(self, qid: str) -> Dict[str, float]:
+    def query_judgments(self, qid: str) -> Dict[str, float]:
+        """Given a query identifier, return the mapping of judgments available for it in this CQRel."""
         if qid in self.queries():
             return self._query_json(qid)
         raise ValueError("No qid={0} in cqrel: {1}".format(qid, self.queries()))
 
 
 class CModel(object):
+    """
+    Usually you're going to get this from:
+
+    - training a new model on a dataset: :func:`~fastrank.clib.CDataset.train_model`.
+    - loading a saved model from a file, using :func:`~from_dict`.
+    """
     def __init__(self, pointer, params=None):
         self.pointer = pointer
         self.params = params
@@ -121,6 +143,10 @@ class CModel(object):
 
     @staticmethod
     def from_dict(model_json: Dict) -> "CModel":
+        """Create a model from a python representation.
+        
+        >>> model = CModel.from_dict(json.load("saved_model.json"))
+        """
         CModel._check_model_json(model_json)
         json_str = json.dumps(model_json).encode("utf-8")
         return CModel(_handle_c_result(lib.model_from_json(json_str)))
@@ -145,6 +171,12 @@ class CModel(object):
         return response
 
     def to_dict(self):
+        """Turn the opaque Rust model pointer into inspectable JSON structure. This ties nicely to :func:`~from_dict`.
+        
+        >>> model_copy = CModel.from_dict(model.to_dict())
+
+        After which both ``model_copy`` and ``model`` will have equivalent models.
+        """
         return self._query_json("to_json")
 
     def __str__(self):
@@ -152,6 +184,14 @@ class CModel(object):
 
 
 class CDataset(object):
+    """
+    This class abstracts access to a rust-owned dataset.
+
+    Construct one of these with either:
+
+     - :func:`~open_ranksvm` a file in ranksvm/ranklib/libsvm/svmlight format.
+     - :func:`~from_numpy` with pre-loaded/pre-created numpy arrays.
+    """
     def __init__(self, pointer=None):
         self.pointer = pointer
         # need to hold onto any numpy arrays...
@@ -165,6 +205,16 @@ class CDataset(object):
 
     @staticmethod
     def open_ranksvm(data_path, feature_names_path=None) -> "CDataset":
+        """
+        Construct a dataset with optional feature names. Supports gzip, bzip2 and zstd compression.
+
+        :param data_path: The path to your input file.
+        :type data_path: str
+        :param feature_names_path: The path to a JSON file of feature names (optional).
+        :type feature_names_path: str
+
+        >>> dataset = CDataset.open_ranksvm("examples/trec_news_2018.train", "examples/trec_news_2018.features.json")
+        """
         data_path = data_path.encode("utf-8")
         if feature_names_path is not None:
             feature_names_path = feature_names_path.encode("utf-8")
@@ -176,6 +226,23 @@ class CDataset(object):
 
     @staticmethod
     def from_numpy(X, y, qid) -> "CDataset":
+        """
+        Construct a dataset from in-memory numpy arrays. This class will hold on to them so that Rust points at them. If you delete them, bad things will happen.
+
+        :param X: The feature matrix, a (NxD) float32 matrix; N instances, D features. Must be dense for now.
+        :type X: numpy.array
+        :param y: The judgment vector, a 1xN or Nx1 float64 matrix.
+        :type y: numpy.array
+        :param qid: The numeric representations of query ids (not possible for all datasets, I know.) 1xN or Nx1 int64 matrix.
+        :type qid: numpy.array
+
+        We can then construct our own numpy arrays, or use the sklearn loader:
+
+        >>> from sklearn.datasets import load_svmlight_file
+        >>> (X, y, qid) = load_svmlight_file("../examples/trec_news_2018.train", dtype=np.float32, zero_based=False, query_id=True)
+        >>> X = X.todense()
+        >>> dataset = CDataset.from_numpy(X, y, qid)
+        """
         (N, D) = X.shape
         assert N > 0
         assert D > 0
@@ -207,6 +274,13 @@ class CDataset(object):
             raise ValueError("Forgot to call open_* or from_numpy on CDataset!")
 
     def subsample_queries(self, queries: List[str]) -> "CDataset":
+        """
+        Construct a subset of this dataset from the given query ids. 
+        This can be used to implement train/test splits or cross-validation.
+
+        >>> train = dataset.subsample_queries(["001", "002"])
+        >>> test = dataset.subsample_queries(["003"])
+        """
         self._require_init()
         actual_queries = self.queries()
         for q in queries:
@@ -226,6 +300,15 @@ class CDataset(object):
         return child
 
     def subsample_feature_names(self, features: List[str]) -> "CDataset":
+        """
+        Construct a subset of this dataset from the given features. 
+        This can be used to experiment with feature subsets and do ablation studies.
+
+        >>> features = dataset.feature_names()
+        >>> assert("pagerank" in features)
+        >>> features.remove("pagerank")
+        >>> no_pagerank = train.subsample_feature_names(list(features))
+        """
         name_to_id = dict(
             zip(self._query_json("feature_names"), self._query_json("feature_ids"))
         )
@@ -238,6 +321,11 @@ class CDataset(object):
         return child
 
     def train_model(self, train_req: Dict) -> CModel:
+        """
+        Train a Model on this Dataset.
+        
+        TODO: make this accept a :class:`~fastrank.TrainRequest` object.
+        """
         self._require_init()
         train_req_str = json.dumps(train_req).encode("utf-8")
         train_resp = _handle_c_result(lib.train_model(train_req_str, self.pointer))
@@ -254,36 +342,56 @@ class CDataset(object):
         return response
 
     def num_features(self) -> int:
+        """Return the number of features available in this dataset."""
         return self._query_json("num_features")
 
     def feature_ids(self) -> Set[int]:
+        """Return a set of feature ids available in this dataset."""
         return set(self._query_json("feature_ids"))
 
     def feature_names(self) -> Set[str]:
+        """Return a set of feature names available in this dataset."""
         return set(self._query_json("feature_names"))
 
-    def feature_index_to_name(self):
+    def feature_index_to_name(self) -> Dict[int, str]:
+        """Returns a mapping of feature ids to feature names present in this dataset."""
         return dict(
             zip(self._query_json("feature_ids"), self._query_json("feature_names"))
         )
 
-    def feature_name_to_index(self):
+    def feature_name_to_index(self) -> Dict[str, int]:
+        """Returns a mapping of feature names to feature ids present in this dataset."""
         return dict(
             zip(self._query_json("feature_names"), self._query_json("feature_ids"))
         )
 
     def num_instances(self) -> int:
+        """Returns the number of instances present in this dataset."""
         return self._query_json("num_instances")
 
     def queries(self) -> Set[str]:
+        """Collect the set of queries present in this dataset."""
         return set(self._query_json("queries"))
 
     def instances_by_query(self) -> Dict[str, List[int]]:
+        """Collect a list of instance ids by their query."""
         return self._query_json("instances_by_query")
 
     def evaluate(
         self, model: CModel, evaluator: str, qrel: CQRel = None
     ) -> Dict[str, float]:
+        """
+        Evaluate a model across this dataset using the given evaluator, optionally with judgments passed in.
+
+        :param model: The model to evaluate.
+        :type model: CModel
+        :param evaluator: The evaluator to use. Supports "ndcg", "ndcg@5", etc.
+        :type evaluator: str
+        :param qrel: The judgments, if any.
+        :type qrel: CQRel
+        :return: A mapping from query ids to evaluator scores.
+        :rtype: Dict[str, float]
+        """
         self._require_init()
         model._require_init()
         qrel_pointer = ffi.NULL
@@ -311,9 +419,19 @@ class CDataset(object):
     ) -> int:
         """
         Save output of model on this dataset to output_path with name system_name. 
-        Return the number of records written or raise an error.
-        Don't print success if ``quiet`` is True.
-        Only keep the best ``depth`` results per query unless depth is zero.
+        
+        :param model: Get results from this model.
+        :type model: CModel
+        :param output_path: Save results in TREC Run format to this file.
+        :type output_path: str
+        :param system_name: What you want to call your system in the final column; or else "fastrank".
+        :type system_name: str
+        :param quiet: Don't print success if ``quiet`` is True.
+        :type quiet: bool
+        :param depth: Only keep the best ``depth`` results per query unless ``depth`` is zero.
+        :type depth: int
+        :return: The number of records written.
+        :rtype: int
         """
         self._require_init()
         model._require_init()
@@ -340,7 +458,10 @@ def query_json(message: str):
     """
     This method sends any old python object as input into the Rust exec_json call.
     The request is encoded on the way in.
-    Returns a JSON object decoded 'loads' to python.
+
+    Returns a JSON object decoded 'loads' to python. 
+    
+    Consider this private if you can.
     """
     command = message.encode("utf-8")
     response = json.loads(_handle_rust_str(lib.query_json(command)))
