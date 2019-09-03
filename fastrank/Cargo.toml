@@ -7,7 +7,7 @@ publish = false
 
 [dependencies]
 rand = "0.7"
-rand_xoshiro = "0.3"
+rand_xoshiro = "0.4"
 bzip2 = "0.3"
 flate2 = "1.0"
 zstd = "0.4"
