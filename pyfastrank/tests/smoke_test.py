@@ -169,7 +169,7 @@ class TestRustAPI(unittest.TestCase):
             measures.append(ndcg5_with)
         for m in measures:
             # SemVer change-detection: need to bump major version if this is no longer true!
-            self.assertAlmostEqual(m, 0.623710993892094)
+            self.assertAlmostEqual(m, 0.436791451738704)
 
     def test_model_serialization(self):
         rd = TestRustAPI.rd

@@ -1,7 +1,7 @@
 from setuptools import setup, find_packages
 
-pyfastrank_version = "0.4.0-alpha"
-cfastrank_version = "0.4.0-alpha"
+pyfastrank_version = "0.4.0"
+cfastrank_version = "0.4.0"
 
 dependencies = ["cfastrank=={0}".format(cfastrank_version)]
 dependencies.extend(open("requirements.txt").readlines())
