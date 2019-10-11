@@ -6,8 +6,7 @@ edition = "2018"
 publish = false
 
 [dependencies]
-rand = "0.7"
-rand_xoshiro = "0.4"
+oorandom = "11.1.0"
 bzip2 = "0.3"
 flate2 = "1.0"
 zstd = "0.4"

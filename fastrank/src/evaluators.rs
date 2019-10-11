@@ -4,7 +4,7 @@ use crate::qrel::QuerySetJudgments;
 use crate::stats::PercentileStats;
 use crate::InstanceId;
 use ordered_float::NotNan;
-use rand::prelude::*;
+use oorandom::Rand64;
 use std::cmp::Ordering;
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -156,13 +156,13 @@ impl SetEvaluator {
 
     pub fn bootstrap_eval(&self, num_trials: u32, model: &dyn Model) -> PercentileStats {
         let data = self.evaluate_to_vec(model);
-        let n = data.len();
+        let n = data.len() as u64;
         let mut means = Vec::new();
-        let mut rng = thread_rng();
+        let mut rng = Rand64::new(0xdeadbeef);
         for _ in 0..num_trials {
             let mut sum = 0.0;
             for _ in 0..n {
-                let index: usize = rng.gen_range(0, n);
+                let index = rng.rand_range(0..n) as usize;
                 sum += data[index];
             }
             means.push(sum / (n as f64))

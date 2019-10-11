@@ -7,9 +7,7 @@ use crate::stats;
 use crate::Scored;
 use crate::{FeatureId, InstanceId};
 use ordered_float::NotNan;
-use rand::prelude::*;
-use rand_xoshiro::rand_core::SeedableRng;
-use rand_xoshiro::Xoshiro256StarStar;
+use oorandom::Rand64;
 use rayon::prelude::*;
 use std::cmp;
 
@@ -143,9 +141,10 @@ pub struct RandomForestParams {
 
 impl Default for RandomForestParams {
     fn default() -> Self {
+        let mut rand = Rand64::new(0xdeadbeef);
         Self {
             weight_trees: false,
-            seed: thread_rng().next_u64(),
+            seed: rand.rand_u64(),
             split_method: SplitSelectionStrategy::SquaredError(),
             quiet: false,
             num_trees: 100,
@@ -292,9 +291,9 @@ pub fn learn_ensemble(
     dataset: &DatasetRef,
     evaluator: &SetEvaluator,
 ) -> WeightedEnsemble {
-    let mut rand = Xoshiro256StarStar::seed_from_u64(params.seed);
+    let mut rand = Rand64::new(params.seed.into());
     let seeds: Vec<(u32, u64)> = (0..params.num_trees)
-        .map(|i| (i, rand.next_u64()))
+        .map(|i| (i, rand.rand_u64()))
         .collect();
 
     let mut trees: Vec<Scored<TreeNode>> = Vec::new();
@@ -305,7 +304,7 @@ pub fn learn_ensemble(
     }
 
     trees.par_extend(seeds.par_iter().map(|(idx, rand_seed)| {
-        let mut local_rand = Xoshiro256StarStar::seed_from_u64(*rand_seed);
+        let mut local_rand = Rand64::new((*rand_seed).into());
         let subsample = dataset
             .random_sample(
                 params.feature_sampling_rate,

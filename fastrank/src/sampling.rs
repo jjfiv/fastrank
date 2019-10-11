@@ -1,14 +1,15 @@
 use crate::dataset::{DatasetRef, RankingDataset, SampledDatasetRef};
 use crate::FeatureId;
 use crate::InstanceId;
-use rand::prelude::*;
+use oorandom::Rand64;
+use crate::randutil;
 use std::cmp;
 use std::collections::HashSet;
 
 pub trait DatasetSampling {
     /// Sample this dataset randomly to frate percent of features and srate percent of instances.
     /// At least one feature and one instance is selected no matter how small the percentage.
-    fn random_sample<R: Rng>(&self, frate: f64, srate: f64, rand: &mut R) -> SampledDatasetRef;
+    fn random_sample(&self, frate: f64, srate: f64, rand: &mut Rand64) -> SampledDatasetRef;
 
     /// This represents a deterministic sampling of instances.
     fn with_instances(&self, instances: &[InstanceId]) -> SampledDatasetRef;
@@ -20,10 +21,10 @@ pub trait DatasetSampling {
     /// Errors when no features remaining or features to keep not available.
     fn with_features(&self, features: &[FeatureId]) -> Result<SampledDatasetRef, String>;
 
-    fn train_test<R: Rng>(
+    fn train_test(
         &self,
         test_fraction: f64,
-        rand: &mut R,
+        rand: &mut Rand64,
     ) -> (SampledDatasetRef, SampledDatasetRef);
 }
 
@@ -34,7 +35,7 @@ impl DatasetRef {
 }
 
 impl DatasetSampling for DatasetRef {
-    fn random_sample<R: Rng>(&self, frate: f64, srate: f64, rand: &mut R) -> SampledDatasetRef {
+    fn random_sample(&self, frate: f64, srate: f64, rand: &mut Rand64) -> SampledDatasetRef {
         let mut features = self.features();
         let mut queries = self.queries();
 
@@ -45,12 +46,11 @@ impl DatasetSampling for DatasetRef {
         let n_features = cmp::max(1, ((features.len() as f64) * frate) as usize);
         let n_queries = cmp::max(1, ((queries.len() as f64) * srate) as usize);
 
-        let features = features
-            .choose_multiple(rand, n_features)
-            .cloned()
-            .collect();
-        let queries: HashSet<&str> = queries
-            .choose_multiple(rand, n_queries)
+        let features = randutil::sample_without_replacement(&features, rand, n_features);
+        let queries_chosen = randutil::sample_without_replacement(&queries, rand, n_queries);
+        // Turn into a set so we can filter instances.
+        let queries: HashSet<&str> = queries_chosen
+            .iter()
             .map(|s| s.as_str())
             .collect();
         let mut instances: Vec<InstanceId> = Vec::new();
@@ -117,10 +117,11 @@ impl DatasetSampling for DatasetRef {
         }
     }
 
-    fn train_test<R: Rng>(
+
+    fn train_test(
         &self,
         test_fraction: f64,
-        rand: &mut R,
+        rand: &mut Rand64,
     ) -> (SampledDatasetRef, SampledDatasetRef) {
         let mut qs = self.queries();
         let n_test_qs = ((qs.len() as f64) * test_fraction) as usize;
@@ -134,7 +135,7 @@ impl DatasetSampling for DatasetRef {
             panic!("Must be some training data left!");
         }
 
-        qs.shuffle(rand);
+        randutil::shuffle(&mut qs, rand);
         let test_qs = qs.split_off(n_test_qs);
         let train_qs = qs;
 

@@ -4,9 +4,8 @@ use crate::model::{DenseLinearRankingModel, ModelEnum, WeightedEnsemble};
 use crate::FeatureId;
 use crate::Scored;
 use ordered_float::NotNan;
-use rand::prelude::*;
-use rand_xoshiro::rand_core::SeedableRng;
-use rand_xoshiro::Xoshiro256StarStar;
+use oorandom::Rand64;
+use crate::randutil::shuffle;
 use rayon::prelude::*;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -25,13 +24,14 @@ pub struct CoordinateAscentParams {
 
 impl Default for CoordinateAscentParams {
     fn default() -> Self {
+        let mut rand = Rand64::new(0xdeadbeef);
         Self {
             num_restarts: 5,
             num_max_iterations: 25,
             step_base: 0.05,
             step_scale: 2.0,
             tolerance: 0.001,
-            seed: thread_rng().next_u64(),
+            seed: rand.rand_u64(),
             normalize: true,
             quiet: false,
             init_random: true,
@@ -47,10 +47,10 @@ impl DenseLinearRankingModel {
         }
     }
 
-    fn reset<R: Rng>(&mut self, init_random: bool, rand: &mut R, valid_features: &[FeatureId]) {
+    fn reset(&mut self, init_random: bool, rand: &mut Rand64, valid_features: &[FeatureId]) {
         if init_random {
             for i in valid_features.iter() {
-                self.weights[i.to_index()] = rand.gen_range(-1.0, 1.0);
+                self.weights[i.to_index()] = (rand.rand_float() * 2.0) - 1.0;
             }
         } else {
             self.reset_uniform(valid_features);
@@ -84,11 +84,11 @@ impl DenseLinearRankingModel {
 
 const SIGN: &[i32] = &[0, -1, 1];
 
-fn optimize_inner<R: Rng>(
+fn optimize_inner(
     restart_id: u32,
     data: &dyn RankingDataset,
     evaluator: &SetEvaluator,
-    mut rand: R,
+    mut rand: Rand64,
     params: &CoordinateAscentParams,
 ) -> Scored<DenseLinearRankingModel> {
     let quiet = params.quiet;
@@ -113,7 +113,7 @@ fn optimize_inner<R: Rng>(
     loop {
         let mut fids = fids.clone();
         // Get new order of features for this optimization pass.
-        fids.shuffle(&mut rand);
+        shuffle(&mut fids, &mut rand);
 
         if !quiet {
             println!("Shuffle features and optimize!");
@@ -198,7 +198,7 @@ fn optimize_inner<R: Rng>(
 
 impl CoordinateAscentParams {
     pub fn learn(&self, data: &dyn RankingDataset, evaluator: &SetEvaluator) -> ModelEnum {
-        let mut rand = Xoshiro256StarStar::seed_from_u64(self.seed);
+        let mut rand = Rand64::new(self.seed.into());
 
         assert!(data.n_dim() > 0);
         assert!(data.instances().len() > 0);
@@ -214,7 +214,7 @@ impl CoordinateAscentParams {
             .map(|restart_id| {
                 (
                     restart_id,
-                    Xoshiro256StarStar::seed_from_u64(rand.next_u64()),
+                    Rand64::new(rand.rand_u64().into()),
                 )
             })
             .collect();

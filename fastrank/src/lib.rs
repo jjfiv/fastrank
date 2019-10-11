@@ -4,6 +4,7 @@ use std::cmp::Ordering;
 #[macro_use]
 extern crate serde_derive;
 
+pub mod randutil;
 /// Contains code for feature-at-a-time non-differentiable optimization.
 pub mod coordinate_ascent;
 pub mod dataset;
