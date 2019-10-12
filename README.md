@@ -3,6 +3,8 @@
 
 My most frequently used learning-to-rank algorithms ported to rust for efficiency.
 
+Read my [blog-post](https://jjfoley.me/2019/10/11/fastrank-alpha.html) announcing the first public version: 0.4. It's alpha because I think the API needs work, not because there's any sort of known correctness or compatiblity issues.
+
 ## Python Usage 
 
 ```shell
