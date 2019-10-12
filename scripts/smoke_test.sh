@@ -13,5 +13,5 @@ export RUST_BACKTRACE=1
 cargo build --release 
 
 rm -rf target/wheels
-cd cfastrank && pyo3-pack build -b cffi --release && cd - && pip install target/wheels/*.whl
+cd cfastrank && maturin build -b cffi --release && cd - && pip install target/wheels/*.whl
 cd pyfastrank && python3 setup.py install && PYTHONPATH=. python3 tests/smoke_test.py && cd -
