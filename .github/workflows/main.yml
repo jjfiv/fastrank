@@ -6,7 +6,7 @@ jobs:
   build:
     strategy:
       matrix:
-        platform: [ubuntu-latest, windows-latest, macOS-latest]
+        platform: [ ubuntu-latest, windows-latest, macOS-latest ]
     runs-on: ${{ matrix.platform }}
 
     steps:
@@ -29,7 +29,7 @@ jobs:
       - run: |
           pip install -r requirements.txt
           pip install maturin .
-          python -I test_with_example_data.py
+          python -I -m unittest discover -s tests -v
       - run: |
           maturin build --release
       - uses: actions/upload-artifact@v1

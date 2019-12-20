@@ -19,16 +19,17 @@ oorandom = "11.1.0"
 bzip2 = "0.3"
 flate2 = "1.0"
 zstd = "0.4"
-rayon = "=1.2.0"
+rayon = "1.2"
 serde = { version = "1", features = ["rc"] }
 serde_json = "1"
 serde_derive = "1"
 ordered-float = { version = "1.0", features = ["serde"] }
 
 [build-dependencies]
-cbindgen = "0.9"
+cbindgen = "0.12"
 
 [package.metadata.maturin]
+requires-dist = ["attrs", "cffi", "numpy"]
 classifier = [
   "Programming Language :: Python :: 3.5",
   "License :: OSI Approved :: MIT License",
