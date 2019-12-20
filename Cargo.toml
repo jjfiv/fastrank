@@ -10,7 +10,7 @@ license = "MIT"
 publish = false
 
 [lib]
-name = "cfastrank"
+name = "fastrank"
 crate-type = ["cdylib"]
 
 [dependencies]

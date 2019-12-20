@@ -1,7 +1,7 @@
 import unittest
 import tempfile
 import numpy as np
-import ujson as json
+import json
 import sklearn
 from sklearn.datasets import load_svmlight_file
 from collections import Counter

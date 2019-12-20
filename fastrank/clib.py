@@ -1,6 +1,6 @@
 import cffi
-import ujson as json
-from cfastrank import lib, ffi
+import json
+from .fastrank import lib, ffi
 import numpy as np
 from typing import Dict, Set, List
 
