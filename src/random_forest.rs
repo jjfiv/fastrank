@@ -431,9 +431,9 @@ mod test {
     #[test]
     fn test_random_forest_determinism() {
         let feature_names =
-            dataset::load_feature_names_json("../examples/trec_news_2018.features.json").unwrap();
+            dataset::load_feature_names_json("examples/trec_news_2018.features.json").unwrap();
         let train_dataset = dataset::LoadedRankingDataset::load_libsvm(
-            "../examples/trec_news_2018.train",
+            "examples/trec_news_2018.train",
             Some(&feature_names),
         )
         .unwrap()
