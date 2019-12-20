@@ -1,0 +1,40 @@
+name: CI
+
+on: [push]
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        platform: [ubuntu-latest, windows-latest, macOS-latest]
+    runs-on: ${{ matrix.platform }}
+
+    steps:
+      - name: checkout
+        uses: actions/checkout@v1
+      - name: Setup Rust environment
+        uses: actions-rs/toolchain@v1
+        with:
+            profile: minimal
+            toolchain: stable
+            override: true
+      - name: Setup Python environment
+        uses: actions/setup-python@v1.1.1
+        with:
+          python-version: 3.5
+      - name: rust-cargo
+        uses: actions-rs/cargo@v1.0.1
+        with:
+          command: test
+      - run: |
+          pip install -r requirements.txt
+          pip install maturin .
+          python -I test_with_example_data.py
+      - run: |
+          maturin build --release
+      - uses: actions/upload-artifact@v1
+        name: upload-wheel
+        with:
+          name: wheel-${{ matrix.platform }}
+          path: target/wheels/
+        
