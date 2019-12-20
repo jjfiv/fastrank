@@ -6,7 +6,7 @@ jobs:
   build:
     strategy:
       matrix:
-        platform: [ ubuntu-latest, windows-latest, macOS-latest ]
+        platform: [ ubuntu-latest, macOS-latest ]
     runs-on: ${{ matrix.platform }}
 
     steps:
