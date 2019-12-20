@@ -35,7 +35,7 @@ pub enum FastRankModelParams {
 pub fn do_training(
     train_request: TrainRequest,
     dataset: &DatasetRef,
-) -> Result<ModelEnum, Box<Error>> {
+) -> Result<ModelEnum, Box<dyn Error>> {
     let evaluator = SetEvaluator::create(
         dataset,
         train_request.measure.as_str(),
@@ -56,7 +56,7 @@ pub fn predict_to_trecrun(
     output_path: &str,
     system_name: &str,
     depth: usize,
-) -> Result<usize, Box<Error>> {
+) -> Result<usize, Box<dyn Error>> {
     let mut output = io_helper::open_writer(output_path)?;
     let mut records_written = 0;
     for (qid, docs) in dataset.instances_by_query().iter() {

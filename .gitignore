@@ -1,5 +1,6 @@
 .vscode
 venv
+deploy
 /trec/
 /target/
 target
@@ -25,3 +26,4 @@ Cargo.lock
 *.dll
 *.dylib
 .mypy_cache
+*.tar.gz

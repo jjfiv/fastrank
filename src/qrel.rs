@@ -63,7 +63,7 @@ impl QuerySetJudgments {
     }
 }
 
-pub fn read_file(path: &str) -> Result<QuerySetJudgments, Box<std::error::Error>> {
+pub fn read_file(path: &str) -> Result<QuerySetJudgments, Box<dyn std::error::Error>> {
     let mut reader = io_helper::open_reader(path)?;
 
     let mut line = String::new();

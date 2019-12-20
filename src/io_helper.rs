@@ -15,7 +15,7 @@ use std::io::Result;
 use zstd;
 
 /// Open a file based on its extension; seamlessly supporting different compression styles.
-pub fn open_reader(file_name: &str) -> Result<Box<BufRead>> {
+pub fn open_reader(file_name: &str) -> Result<Box<dyn BufRead>> {
     let fp = File::open(file_name)?;
     return if file_name.ends_with(".zst") {
         Ok(Box::new(BufReader::new(zstd::Decoder::new(fp)?)))
@@ -28,7 +28,7 @@ pub fn open_reader(file_name: &str) -> Result<Box<BufRead>> {
     };
 }
 
-pub fn open_writer(file_name: &str) -> Result<Box<Write>> {
+pub fn open_writer(file_name: &str) -> Result<Box<dyn Write>> {
     let fp = File::create(file_name)?;
     return if file_name.ends_with(".zst") {
         Ok(Box::new(BufWriter::new(zstd::Encoder::new(fp, 0)?)))

@@ -31,7 +31,7 @@ impl DenseDataset {
         xs: &'static [f32],
         ys: &'static [f64],
         qids: &'static [i64],
-    ) -> Result<DenseDataset, Box<Error>> {
+    ) -> Result<DenseDataset, Box<dyn Error>> {
         let mut qid_nos = Vec::new();
         let mut qid_strings = HashMap::new();
 
@@ -108,7 +108,7 @@ impl RankingDataset for DenseDataset {
             .map(|(k, v)| (k.to_string(), v))
             .collect()
     }
-    fn score(&self, id: InstanceId, model: &Model) -> NotNan<f64> {
+    fn score(&self, id: InstanceId, model: &dyn Model) -> NotNan<f64> {
         let instance = DenseDatasetInstance { id, dataset: self };
         model.score(&instance)
     }
@@ -147,7 +147,7 @@ impl RankingDataset for DenseDataset {
         Some(f64::from(*val))
     }
     // Given a name or number as a string, lookup the feature id:
-    fn try_lookup_feature(&self, name_or_num: &str) -> Result<FeatureId, Box<Error>> {
+    fn try_lookup_feature(&self, name_or_num: &str) -> Result<FeatureId, Box<dyn Error>> {
         crate::dataset::try_lookup_feature(self, &self.feature_names, name_or_num)
     }
 }

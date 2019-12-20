@@ -209,14 +209,14 @@ impl Instance {
 
 /// This class implements an iterator over a file of libsvm/ranklib style instances.
 pub struct InstanceIter {
-    reader: Box<io::BufRead>,
+    reader: Box<dyn io::BufRead>,
     line: String,
     line_num: u64,
 }
 
 impl InstanceIter {
     /// Construct a new iterator from a file.
-    fn new(reader: Box<io::BufRead>) -> Self {
+    fn new(reader: Box<dyn io::BufRead>) -> Self {
         Self {
             reader,
             line: String::new(),
@@ -261,7 +261,7 @@ impl Iterator for InstanceIter {
 }
 
 /// Public interface to construct an iterator of instances.
-pub fn instances(reader: Box<io::BufRead>) -> InstanceIter {
+pub fn instances(reader: Box<dyn io::BufRead>) -> InstanceIter {
     InstanceIter::new(reader)
 }
 
@@ -269,7 +269,7 @@ pub fn instances(reader: Box<io::BufRead>) -> InstanceIter {
 /// a closure) on the parsed instances. On any parse failure, it will short-circuit and return an
 /// error. In comparison to an iterator, this callback approach allows us to re-use a single buffer
 /// for our line-based file-IO.
-pub fn foreach<F>(reader: Box<io::BufRead>, handler: &mut F) -> Result<(), FileParseError>
+pub fn foreach<F>(reader: Box<dyn io::BufRead>, handler: &mut F) -> Result<(), FileParseError>
 where
     F: FnMut(Instance),
 {
@@ -279,7 +279,7 @@ where
     Ok(())
 }
 
-pub fn collect_reader(reader: Box<io::BufRead>) -> Result<Vec<Instance>, FileParseError> {
+pub fn collect_reader(reader: Box<dyn io::BufRead>) -> Result<Vec<Instance>, FileParseError> {
     instances(reader).collect()
 }
 

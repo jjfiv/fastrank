@@ -95,7 +95,7 @@ impl RankedInstance {
 #[derive(Clone)]
 pub struct SetEvaluator {
     dataset: DatasetRef,
-    evaluator: Arc<Evaluator>,
+    evaluator: Arc<dyn Evaluator>,
 }
 
 impl SetEvaluator {
@@ -105,7 +105,7 @@ impl SetEvaluator {
 
     pub fn print_standard_eval(
         split_name: &str,
-        model: &Model,
+        model: &dyn Model,
         dataset: &DatasetRef,
         judgments: &Option<QuerySetJudgments>,
     ) {
@@ -133,7 +133,7 @@ impl SetEvaluator {
         dataset: &DatasetRef,
         orig_name: &str,
         judgments: Option<QuerySetJudgments>,
-    ) -> Result<SetEvaluator, Box<std::error::Error>> {
+    ) -> Result<SetEvaluator, Box<dyn std::error::Error>> {
         let (name, depth) = if let Some(at_point) = orig_name.find("@") {
             let (lhs, rhs) = orig_name.split_at(at_point);
             let depth = rhs[1..]

@@ -5,7 +5,7 @@ use ordered_float::NotNan;
 use serde::{Deserialize, Serialize};
 
 pub trait Model: std::fmt::Debug {
-    fn score(&self, features: &FeatureRead) -> NotNan<f64>;
+    fn score(&self, features: &dyn FeatureRead) -> NotNan<f64>;
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -17,7 +17,7 @@ pub enum ModelEnum {
 }
 
 impl Model for ModelEnum {
-    fn score(&self, features: &FeatureRead) -> NotNan<f64> {
+    fn score(&self, features: &dyn FeatureRead) -> NotNan<f64> {
         match self {
             ModelEnum::SingleFeature(m) => m.score(features),
             ModelEnum::Linear(m) => m.score(features),
@@ -34,7 +34,7 @@ pub struct SingleFeatureModel {
 }
 
 impl Model for SingleFeatureModel {
-    fn score(&self, features: &FeatureRead) -> NotNan<f64> {
+    fn score(&self, features: &dyn FeatureRead) -> NotNan<f64> {
         let val = features.get(self.fid).unwrap_or(0.0);
         NotNan::new(self.dir * val).unwrap()
     }
@@ -46,7 +46,7 @@ pub struct DenseLinearRankingModel {
 }
 
 impl Model for DenseLinearRankingModel {
-    fn score(&self, features: &FeatureRead) -> NotNan<f64> {
+    fn score(&self, features: &dyn FeatureRead) -> NotNan<f64> {
         NotNan::new(features.dotp(&self.weights)).expect("Model.predict -> NaN")
     }
 }
@@ -63,7 +63,7 @@ pub enum TreeNode {
 }
 
 impl Model for TreeNode {
-    fn score(&self, features: &FeatureRead) -> NotNan<f64> {
+    fn score(&self, features: &dyn FeatureRead) -> NotNan<f64> {
         match self {
             TreeNode::LeafNode(score) => score.clone(),
             TreeNode::FeatureSplit {
@@ -103,7 +103,7 @@ impl WeightedEnsemble {
 }
 
 impl Model for WeightedEnsemble {
-    fn score(&self, features: &FeatureRead) -> NotNan<f64> {
+    fn score(&self, features: &dyn FeatureRead) -> NotNan<f64> {
         let mut output = 0.0;
         for (weight, model) in self.weights.iter().zip(self.models.iter()) {
             output += weight.into_inner() * model.score(features).into_inner();

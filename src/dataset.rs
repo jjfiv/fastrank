@@ -13,7 +13,7 @@ use std::sync::Arc;
 
 pub fn load_feature_names_json(
     path: &str,
-) -> Result<HashMap<FeatureId, String>, Box<std::error::Error>> {
+) -> Result<HashMap<FeatureId, String>, Box<dyn Error>> {
     let reader = io_helper::open_reader(path)?;
     let data: HashMap<String, String> = serde_json::from_reader(reader)?;
     let data: Result<HashMap<FeatureId, String>, _> = data
@@ -33,7 +33,7 @@ pub trait RankingDataset: Send + Sync {
     fn instances(&self) -> Vec<InstanceId>;
     fn instances_by_query(&self) -> HashMap<String, Vec<InstanceId>>;
 
-    fn score(&self, id: InstanceId, model: &Model) -> NotNan<f64>;
+    fn score(&self, id: InstanceId, model: &dyn Model) -> NotNan<f64>;
     fn gain(&self, id: InstanceId) -> NotNan<f32>;
     fn query_id(&self, id: InstanceId) -> &str;
     /// If the dataset has names, return Some(name)
@@ -45,7 +45,7 @@ pub trait RankingDataset: Send + Sync {
     /// Lookup a feature value for a particular instance.
     fn get_feature_value(&self, instance: InstanceId, fid: FeatureId) -> Option<f64>;
     // Given a name or number as a string, lookup the feature id:
-    fn try_lookup_feature(&self, name_or_num: &str) -> Result<FeatureId, Box<Error>>;
+    fn try_lookup_feature(&self, name_or_num: &str) -> Result<FeatureId, Box<dyn Error>>;
 }
 
 /// This is an Arc wrapper around a LoadedRankingDataset, for cheaper copies.
@@ -67,7 +67,7 @@ impl RankingDataset for DatasetRef {
     fn instances(&self) -> Vec<InstanceId> {
         self.data.instances()
     }
-    fn score(&self, id: InstanceId, model: &Model) -> NotNan<f64> {
+    fn score(&self, id: InstanceId, model: &dyn Model) -> NotNan<f64> {
         self.data.score(id, model)
     }
     fn gain(&self, id: InstanceId) -> NotNan<f32> {
@@ -91,7 +91,7 @@ impl RankingDataset for DatasetRef {
     fn get_feature_value(&self, instance: InstanceId, fid: FeatureId) -> Option<f64> {
         self.data.get_feature_value(instance, fid)
     }
-    fn try_lookup_feature(&self, name_or_num: &str) -> Result<FeatureId, Box<Error>> {
+    fn try_lookup_feature(&self, name_or_num: &str) -> Result<FeatureId, Box<dyn Error>> {
         self.data.try_lookup_feature(name_or_num)
     }
 }
@@ -133,7 +133,7 @@ impl RankingDataset for SampledDatasetRef {
         }
         out
     }
-    fn score(&self, id: InstanceId, model: &Model) -> NotNan<f64> {
+    fn score(&self, id: InstanceId, model: &dyn Model) -> NotNan<f64> {
         self.parent.score(id, model)
     }
     fn gain(&self, id: InstanceId) -> NotNan<f32> {
@@ -158,7 +158,7 @@ impl RankingDataset for SampledDatasetRef {
     fn get_feature_value(&self, instance: InstanceId, fid: FeatureId) -> Option<f64> {
         self.parent.get_feature_value(instance, fid)
     }
-    fn try_lookup_feature(&self, name_or_num: &str) -> Result<FeatureId, Box<Error>> {
+    fn try_lookup_feature(&self, name_or_num: &str) -> Result<FeatureId, Box<dyn Error>> {
         let fid = self.parent.try_lookup_feature(name_or_num)?;
         if self.features.contains(&fid) {
             return Ok(fid);
@@ -176,7 +176,7 @@ impl DatasetRef {
     pub fn load_libsvm(
         path: &str,
         feature_names: Option<&HashMap<FeatureId, String>>,
-    ) -> Result<DatasetRef, Box<std::error::Error>> {
+    ) -> Result<DatasetRef, Box<dyn std::error::Error>> {
         Ok(DatasetRef {
             data: Arc::new(LoadedRankingDataset::load_libsvm(path, feature_names)?),
         })
@@ -206,7 +206,7 @@ impl LoadedRankingDataset {
     pub fn load_libsvm(
         path: &str,
         feature_names: Option<&HashMap<FeatureId, String>>,
-    ) -> Result<LoadedRankingDataset, Box<std::error::Error>> {
+    ) -> Result<LoadedRankingDataset, Box<dyn std::error::Error>> {
         let reader = io_helper::open_reader(path)?;
         let mut instances = Vec::new();
         for inst in libsvm::instances(reader) {
@@ -260,7 +260,7 @@ impl LoadedRankingDataset {
     }
 
     /// Remove a feature or return "not-found".
-    pub fn try_remove_feature(&mut self, name_or_num: &str) -> Result<(), Box<Error>> {
+    pub fn try_remove_feature(&mut self, name_or_num: &str) -> Result<(), Box<dyn Error>> {
         let fid = self.try_lookup_feature(name_or_num)?;
         self.features.swap_remove(fid.to_index());
         Ok(())
@@ -302,7 +302,7 @@ impl RankingDataset for LoadedRankingDataset {
     fn get_feature_value(&self, instance: InstanceId, fid: FeatureId) -> Option<f64> {
         self.instances[instance.to_index()].features.get(fid)
     }
-    fn score(&self, id: InstanceId, model: &Model) -> NotNan<f64> {
+    fn score(&self, id: InstanceId, model: &dyn Model) -> NotNan<f64> {
         model.score(&self.instances[id.to_index()].features)
     }
     fn gain(&self, id: InstanceId) -> NotNan<f32> {
@@ -317,16 +317,16 @@ impl RankingDataset for LoadedRankingDataset {
             .as_ref()
             .map(|s| s.as_str())
     }
-    fn try_lookup_feature(&self, name_or_num: &str) -> Result<FeatureId, Box<Error>> {
+    fn try_lookup_feature(&self, name_or_num: &str) -> Result<FeatureId, Box<dyn Error>> {
         try_lookup_feature(self, &self.feature_names, name_or_num)
     }
 }
 
 pub fn try_lookup_feature(
-    dataset: &RankingDataset,
+    dataset: &dyn RankingDataset,
     feature_names: &HashMap<FeatureId, String>,
     name_or_num: &str,
-) -> Result<FeatureId, Box<Error>> {
+) -> Result<FeatureId, Box<dyn Error>> {
     let features = dataset.features();
     if let Some((num, _)) = feature_names
         .iter()

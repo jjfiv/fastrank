@@ -129,7 +129,7 @@ pub extern "C" fn load_ranksvm_format(
     feature_names_path: *mut c_void,
 ) -> *const CResult {
     let data_path = accept_str("data_path", data_path);
-    let feature_names_path: Option<Result<&str, Box<Error>>> = if feature_names_path.is_null() {
+    let feature_names_path: Option<Result<&str, Box<dyn Error>>> = if feature_names_path.is_null() {
         None
     } else {
         Some(accept_str("feature_names_path", feature_names_path))
@@ -250,7 +250,7 @@ pub extern "C" fn evaluate_by_query(
     let model: Option<&CModel> = unsafe { (model as *const CModel).as_ref() };
     let dataset: Option<&CDataset> = unsafe { (dataset as *const CDataset).as_ref() };
     let qrel: Option<&CQRel> = unsafe { (qrel as *const CQRel).as_ref() };
-    let evaluator: Result<&str, Box<Error>> = accept_str("evaluator_name", evaluator);
+    let evaluator: Result<&str, Box<dyn Error>> = accept_str("evaluator_name", evaluator);
     result_to_json(result_evaluate_by_query(model, dataset, qrel, evaluator))
 }
 
@@ -264,8 +264,8 @@ pub extern "C" fn predict_to_trecrun(
 ) -> *const c_void {
     let model: Option<&CModel> = unsafe { (model as *const CModel).as_ref() };
     let dataset: Option<&CDataset> = unsafe { (dataset as *const CDataset).as_ref() };
-    let output_path: Result<&str, Box<Error>> = accept_str("output_path", output_path);
-    let system_name: Result<&str, Box<Error>> = accept_str("system_name", system_name);
+    let output_path: Result<&str, Box<dyn Error>> = accept_str("output_path", output_path);
+    let system_name: Result<&str, Box<dyn Error>> = accept_str("system_name", system_name);
     result_to_json(result_predict_to_trecrun(
         model,
         dataset,

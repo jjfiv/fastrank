@@ -81,15 +81,15 @@ pub(crate) fn deserialize_from_cstr_json<'a, T: serde::Deserialize<'a>>(
 }
 
 pub(crate) fn result_load_cqrel(
-    data_path: Result<&str, Box<Error>>,
-) -> Result<QuerySetJudgments, Box<Error>> {
+    data_path: Result<&str, Box<dyn Error>>,
+) -> Result<QuerySetJudgments, Box<dyn Error>> {
     crate::qrel::read_file(data_path?)
 }
 
 pub(crate) fn result_cqrel_query_json(
     cqrel: Option<&CQRel>,
-    query_str: Result<&str, Box<Error>>,
-) -> Result<String, Box<Error>> {
+    query_str: Result<&str, Box<dyn Error>>,
+) -> Result<String, Box<dyn Error>> {
     let cqrel = match cqrel {
         None => Err("cqrel pointer is null!")?,
         Some(x) => x,
@@ -105,9 +105,9 @@ pub(crate) fn result_cqrel_query_json(
 }
 
 pub(crate) fn result_load_ranksvm_format(
-    data_path: Result<&str, Box<Error>>,
-    feature_names_path: Option<Result<&str, Box<Error>>>,
-) -> Result<DatasetRef, Box<Error>> {
+    data_path: Result<&str, Box<dyn Error>>,
+    feature_names_path: Option<Result<&str, Box<dyn Error>>>,
+) -> Result<DatasetRef, Box<dyn Error>> {
     let feature_names = feature_names_path
         .transpose()?
         .map(|path| dataset::load_feature_names_json(path))
@@ -119,8 +119,8 @@ pub(crate) fn result_load_ranksvm_format(
 
 pub(crate) fn result_dataset_query_sampling(
     dataset: Option<&CDataset>,
-    queries_json_list: Result<&str, Box<Error>>,
-) -> Result<DatasetRef, Box<Error>> {
+    queries_json_list: Result<&str, Box<dyn Error>>,
+) -> Result<DatasetRef, Box<dyn Error>> {
     let dataset = match dataset {
         Some(d) => d,
         None => Err("Dataset pointer is null!")?,
@@ -132,8 +132,8 @@ pub(crate) fn result_dataset_query_sampling(
 
 pub(crate) fn result_dataset_feature_sampling(
     dataset: Option<&CDataset>,
-    feature_json_list: Result<&str, Box<Error>>,
-) -> Result<DatasetRef, Box<Error>> {
+    feature_json_list: Result<&str, Box<dyn Error>>,
+) -> Result<DatasetRef, Box<dyn Error>> {
     let dataset = match dataset {
         Some(d) => d,
         None => Err("Dataset pointer is null!")?,
@@ -145,8 +145,8 @@ pub(crate) fn result_dataset_feature_sampling(
 
 pub(crate) fn result_dataset_query_json(
     dataset: Option<&CDataset>,
-    query_str: Result<&str, Box<Error>>,
-) -> Result<String, Box<Error>> {
+    query_str: Result<&str, Box<dyn Error>>,
+) -> Result<String, Box<dyn Error>> {
     let dataset = match dataset {
         Some(d) => d,
         None => Err("Dataset pointer is null!")?,
@@ -177,9 +177,9 @@ pub(crate) fn result_dataset_query_json(
 }
 
 pub(crate) fn result_train_model(
-    train_request: Result<TrainRequest, Box<Error>>,
+    train_request: Result<TrainRequest, Box<dyn Error>>,
     dataset: Option<&CDataset>,
-) -> Result<ModelEnum, Box<Error>> {
+) -> Result<ModelEnum, Box<dyn Error>> {
     let dataset = match dataset {
         Some(d) => d,
         None => Err("Dataset pointer is null!")?,
@@ -189,8 +189,8 @@ pub(crate) fn result_train_model(
 
 pub(crate) fn result_model_query_json(
     model: Option<&CModel>,
-    query_str: Result<&str, Box<Error>>,
-) -> Result<String, Box<Error>> {
+    query_str: Result<&str, Box<dyn Error>>,
+) -> Result<String, Box<dyn Error>> {
     let model = match model {
         Some(d) => d,
         None => Err("Model pointer is null!")?,
@@ -206,7 +206,7 @@ pub(crate) fn result_model_query_json(
     Ok(response)
 }
 
-pub(crate) fn result_exec_json(query_str: Result<&str, Box<Error>>) -> Result<String, Box<Error>> {
+pub(crate) fn result_exec_json(query_str: Result<&str, Box<dyn Error>>) -> Result<String, Box<dyn Error>> {
     let response = match query_str? {
         "coordinate_ascent_defaults" => serde_json::to_string(&TrainRequest {
             measure: "ndcg".to_string(),
@@ -227,7 +227,7 @@ pub(crate) fn result_exec_json(query_str: Result<&str, Box<Error>>) -> Result<St
     Ok(response)
 }
 
-fn require_pointer<'a, T>(name: &str, pointer: Option<&'a T>) -> Result<&'a T, Box<Error>> {
+fn require_pointer<'a, T>(name: &str, pointer: Option<&'a T>) -> Result<&'a T, Box<dyn Error>> {
     let inner = match pointer {
         Some(p) => p,
         None => Err(format!("{} pointer is null!", name))?,
@@ -239,8 +239,8 @@ pub(crate) fn result_evaluate_by_query(
     model: Option<&CModel>,
     dataset: Option<&CDataset>,
     qrel: Option<&CQRel>,
-    evaluator: Result<&str, Box<Error>>,
-) -> Result<String, Box<Error>> {
+    evaluator: Result<&str, Box<dyn Error>>,
+) -> Result<String, Box<dyn Error>> {
     let model = &require_pointer("Model", model)?.actual;
     let dataset = &require_pointer("Dataset", dataset)?.reference;
     let qrel = qrel.map(|cq| cq.actual.clone());
@@ -252,10 +252,10 @@ pub(crate) fn result_evaluate_by_query(
 pub(crate) fn result_predict_to_trecrun(
     model: Option<&CModel>,
     dataset: Option<&CDataset>,
-    output_path: Result<&str, Box<Error>>,
-    system_name: Result<&str, Box<Error>>,
+    output_path: Result<&str, Box<dyn Error>>,
+    system_name: Result<&str, Box<dyn Error>>,
     depth: usize,
-) -> Result<String, Box<Error>> {
+) -> Result<String, Box<dyn Error>> {
     let model = &require_pointer("Model", model)?.actual;
     let dataset = &require_pointer("Dataset", dataset)?.reference;
     let written = json_api::predict_to_trecrun(model, dataset, output_path?, system_name?, depth)?;

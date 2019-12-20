@@ -49,7 +49,7 @@ fn squared_error(ids: &[InstanceId], dataset: &dyn RankingDataset) -> NotNan<f64
     }
     NotNan::new(sum_sq_errors).unwrap()
 }
-fn gini_impurity(ids: &[InstanceId], dataset: &RankingDataset) -> NotNan<f64> {
+fn gini_impurity(ids: &[InstanceId], dataset: &dyn RankingDataset) -> NotNan<f64> {
     if ids.len() == 0 {
         return NotNan::new(0.0).unwrap();
     }
@@ -71,7 +71,7 @@ fn plogp(x: f64) -> NotNan<f64> {
         NotNan::new(x * x.log2()).expect("entropy/plogp returned NaN")
     }
 }
-fn entropy(ids: &[InstanceId], dataset: &RankingDataset) -> NotNan<f64> {
+fn entropy(ids: &[InstanceId], dataset: &dyn RankingDataset) -> NotNan<f64> {
     if ids.len() == 0 {
         return NotNan::new(0.0).unwrap();
     }
@@ -92,7 +92,7 @@ impl SplitSelectionStrategy {
         &self,
         lhs: &[InstanceId],
         rhs: &[InstanceId],
-        dataset: &RankingDataset,
+        dataset: &dyn RankingDataset,
     ) -> NotNan<f64> {
         match self {
             SplitSelectionStrategy::SquaredError() => {
@@ -212,7 +212,7 @@ struct SplitCandidate {
 fn generate_split_candidate(
     params: &RandomForestParams,
     fid: FeatureId,
-    dataset: &RankingDataset,
+    dataset: &dyn RankingDataset,
     stats: &stats::ComputedStats,
 ) -> Option<FeatureSplitCandidate> {
     let instances = dataset.instances();
