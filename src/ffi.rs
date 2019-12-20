@@ -4,18 +4,18 @@ use std::error::Error;
 use std::ffi::CStr;
 use std::ffi::CString;
 
-use fastrank::coordinate_ascent::CoordinateAscentParams;
-use fastrank::dataset;
-use fastrank::dataset::DatasetRef;
-use fastrank::dataset::RankingDataset;
-use fastrank::evaluators::SetEvaluator;
-use fastrank::json_api;
-use fastrank::json_api::{FastRankModelParams, TrainRequest};
-use fastrank::model::ModelEnum;
-use fastrank::qrel::QuerySetJudgments;
-use fastrank::random_forest::RandomForestParams;
-use fastrank::sampling::DatasetSampling;
-use fastrank::FeatureId;
+use crate::coordinate_ascent::CoordinateAscentParams;
+use crate::dataset;
+use crate::dataset::DatasetRef;
+use crate::dataset::RankingDataset;
+use crate::evaluators::SetEvaluator;
+use crate::json_api;
+use crate::json_api::{FastRankModelParams, TrainRequest};
+use crate::model::ModelEnum;
+use crate::qrel::QuerySetJudgments;
+use crate::random_forest::RandomForestParams;
+use crate::FeatureId;
+use crate::sampling::DatasetSampling;
 
 use crate::{CDataset, CModel, CQRel, CResult};
 
@@ -27,7 +27,7 @@ struct ErrorMessage {
 }
 
 /// Accept a string parameter!
-pub(crate) fn accept_str(name: &str, input: *const c_void) -> Result<&str, Box<Error>> {
+pub(crate) fn accept_str(name: &str, input: *const c_void) -> Result<&str, Box<dyn Error>> {
     if input.is_null() {
         Err(format!("NULL pointer: {}", name))?;
     }
@@ -43,7 +43,7 @@ pub(crate) fn return_string(output: &str) -> *const c_void {
     CString::into_raw(c_output) as *const c_void
 }
 
-pub(crate) fn result_to_json(rust_result: Result<String, Box<Error>>) -> *const c_void {
+pub(crate) fn result_to_json(rust_result: Result<String, Box<dyn Error>>) -> *const c_void {
     let output = match rust_result {
         Ok(response) => response,
         Err(e) => serde_json::to_string(&ErrorMessage {
@@ -55,7 +55,7 @@ pub(crate) fn result_to_json(rust_result: Result<String, Box<Error>>) -> *const 
     return_string(&output)
 }
 
-pub(crate) fn result_to_c<T>(rust_result: Result<T, Box<Error>>) -> *const CResult {
+pub(crate) fn result_to_c<T>(rust_result: Result<T, Box<dyn Error>>) -> *const CResult {
     let mut c_result = Box::new(CResult::default());
     match rust_result {
         Ok(item) => {
@@ -75,15 +75,15 @@ pub(crate) fn result_to_c<T>(rust_result: Result<T, Box<Error>>) -> *const CResu
 }
 
 pub(crate) fn deserialize_from_cstr_json<'a, T: serde::Deserialize<'a>>(
-    json_str: Result<&'a str, Box<Error>>,
-) -> Result<T, Box<Error>> {
+    json_str: Result<&'a str, Box<dyn Error>>,
+) -> Result<T, Box<dyn Error>> {
     Ok(serde_json::from_str(json_str?)?)
 }
 
 pub(crate) fn result_load_cqrel(
     data_path: Result<&str, Box<Error>>,
 ) -> Result<QuerySetJudgments, Box<Error>> {
-    fastrank::qrel::read_file(data_path?)
+    crate::qrel::read_file(data_path?)
 }
 
 pub(crate) fn result_cqrel_query_json(

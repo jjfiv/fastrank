@@ -1,6 +1,29 @@
-[workspace]
-members = [
-  "fastrank",
-  "cfastrank",
-]
+[package]
+name = "cfastrank"
+version = "0.4.0"
+authors = ["John Foley <jjfoley@smith.edu>"]
+edition = "2018"
+readme = "README.md"
+description = "FastRank Learning to Rank Library written in Rust."
+homepage = "https://github.com/jjfiv/fastrank"
+license = "MIT"
+publish = false
 
+[lib]
+name = "cfastrank"
+crate-type = ["cdylib"]
+
+[dependencies]
+libc = "0.2"
+oorandom = "11.1.0"
+bzip2 = "0.3"
+flate2 = "1.0"
+zstd = "0.4"
+rayon = "=1.2.0"
+serde = { version = "1", features = ["rc"] }
+serde_json = "1"
+serde_derive = "1"
+ordered-float = { version = "1.0", features = ["serde"] }
+
+[build-dependencies]
+cbindgen = "0.9"

@@ -1,31 +1,6 @@
 use ordered_float::NotNan;
 use std::cmp::Ordering;
 
-#[macro_use]
-extern crate serde_derive;
-
-pub mod randutil;
-/// Contains code for feature-at-a-time non-differentiable optimization.
-pub mod coordinate_ascent;
-pub mod dataset;
-pub mod dense_dataset;
-pub mod evaluators;
-pub mod instance;
-/// Contains code for reading compressed files based on their extension.
-pub mod io_helper;
-/// Contains code for reading ranklib and libsvm input files.
-pub mod libsvm;
-pub mod model;
-pub mod normalizers;
-pub mod qrel;
-pub mod sampling;
-
-pub mod json_api;
-
-pub mod random_forest;
-/// Streaming computation of statistics.
-pub mod stats;
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[repr(transparent)]
 pub struct FeatureId(u32);
@@ -79,7 +54,7 @@ impl<T: Clone> Scored<T> {
             item,
         }
     }
-    fn replace_if_better(&mut self, score: f64, item: T) -> bool {
+    pub fn replace_if_better(&mut self, score: f64, item: T) -> bool {
         if let Ok(score) = NotNan::new(score) {
             if score > self.score {
                 self.item = item;
