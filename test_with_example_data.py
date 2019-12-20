@@ -5,6 +5,7 @@ import ujson as json
 import sklearn
 from sklearn.datasets import load_svmlight_file
 from collections import Counter
+import fastrank
 from fastrank import CQRel, CDataset, CModel, query_json, TrainRequest
 import copy
 
@@ -50,14 +51,14 @@ _EXPECTED_FEATURE_NAMES = set(
 class TestRustAPI(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.qrel = CQRel.load_file("../examples/newsir18-entity.qrel")
+        cls.qrel = CQRel.load_file("examples/newsir18-entity.qrel")
         cls.rd = CDataset.open_ranksvm(
-            "../examples/trec_news_2018.train",
-            "../examples/trec_news_2018.features.json",
+            "examples/trec_news_2018.train",
+            "examples/trec_news_2018.features.json",
         )
         # Test out "from_numpy:"
         (cls.train_X, cls.train_y, cls.train_qid) = load_svmlight_file(
-            "../examples/trec_news_2018.train",
+            "examples/trec_news_2018.train",
             dtype=np.float32,
             zero_based=False,
             query_id=True,
@@ -79,7 +80,7 @@ class TestRustAPI(unittest.TestCase):
         self.assertEqual(set(qrel.to_dict().keys()), _FULL_QUERIES)
 
     def test_load_dataset(self):
-        rd = CDataset.open_ranksvm("../examples/trec_news_2018.train")
+        rd = CDataset.open_ranksvm("examples/trec_news_2018.train")
         assert rd.queries() == _EXPECTED_QUERIES
         assert rd.feature_ids() == _EXPECTED_FEATURE_IDS
         assert rd.feature_names() == set(str(x) for x in _EXPECTED_FEATURE_IDS)

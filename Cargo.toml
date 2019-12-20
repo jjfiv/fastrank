@@ -1,6 +1,6 @@
 [package]
-name = "cfastrank"
-version = "0.4.0"
+name = "fastrank"
+version = "0.5.0"
 authors = ["John Foley <jjfoley@smith.edu>"]
 edition = "2018"
 readme = "README.md"
@@ -27,3 +27,10 @@ ordered-float = { version = "1.0", features = ["serde"] }
 
 [build-dependencies]
 cbindgen = "0.9"
+
+[package.metadata.maturin]
+classifier = [
+  "Programming Language :: Python :: 3.5",
+  "License :: OSI Approved :: MIT License",
+  "Operating System :: OS Independent",
+]
