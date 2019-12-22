@@ -1,6 +1,12 @@
 name: CI
 
-on: [push]
+on:
+  create:
+  pull_request:
+  push: 
+  schedule:
+    # Runs every thursday at 23:23 GMT. This should make sure this syntax and rust dependencies do not rot for too long.
+    - cron:  '23 23 * * 4'
 
 jobs:
   build:
@@ -22,19 +28,27 @@ jobs:
         uses: actions/setup-python@v1.1.1
         with:
           python-version: 3.5
-      - name: rust-cargo
-        uses: actions-rs/cargo@v1.0.1
-        with:
-          command: test
-      - run: |
+      - name: cargo test
+        run: |
+          cargo test --release
+      - name: py-install
+        run: |
           pip install -r requirements.txt
-          pip install maturin .
-          python -I -m unittest discover -s tests -v
-      - run: |
+          pip install maturin
           maturin build --release
+          pip install ../target/wheels/ctoybox*.whl
+      - name: py-unittest
+        run: |
+          python -I -m unittest discover -s tests -v
       - uses: actions/upload-artifact@v1
         name: upload-wheel
         with:
           name: wheel-${{ matrix.platform }}
           path: target/wheels/
+      - name: '[on-create] pypi-publish'
+        if: github.event_name == 'create'
+        working-directory: ./ctoybox
+        env: 
+          MATURIN_PASSWORD: ${{ secrets.PYPI_TOKEN }}
+        run: maturin publish -b cffi --username __token__
         
