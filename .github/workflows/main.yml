@@ -36,7 +36,7 @@ jobs:
           pip install -r requirements.txt
           pip install maturin
           maturin build --release
-          pip install ../target/wheels/ctoybox*.whl
+          pip install ../target/wheels/fastrank*.whl
       - name: py-unittest
         run: |
           python -I -m unittest discover -s tests -v
@@ -47,7 +47,6 @@ jobs:
           path: target/wheels/
       - name: '[on-create] pypi-publish'
         if: github.event_name == 'create'
-        working-directory: ./ctoybox
         env: 
           MATURIN_PASSWORD: ${{ secrets.PYPI_TOKEN }}
         run: maturin publish -b cffi --username __token__
