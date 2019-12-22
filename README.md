@@ -1,4 +1,4 @@
-# FastRank [![Build Status](https://travis-ci.com/jjfiv/fastrank.svg?token=wqGZxUYsDSPaq1jz2zn6&branch=master)](https://travis-ci.com/jjfiv/fastrank) [![PyPI version](https://badge.fury.io/py/fastrank.svg)](https://badge.fury.io/py/fastrank)
+# FastRank ![CI Status Badge](https://github.com/jjfiv/fastrank/workflows/CI/badge.svg) [![PyPI version](https://badge.fury.io/py/fastrank.svg)](https://badge.fury.io/py/fastrank)
 
 My most frequently used learning-to-rank algorithms ported to rust for efficiency.
 
