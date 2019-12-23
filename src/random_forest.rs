@@ -280,8 +280,8 @@ fn generate_split_candidate(
             fid,
             split: sc.split,
             importance: sc.importance,
-            lhs: lhs.iter().cloned().collect(),
-            rhs: rhs.iter().cloned().collect(),
+            lhs: lhs.to_vec(),
+            rhs: rhs.to_vec(),
         }
     })
 }
@@ -397,9 +397,9 @@ fn learn_recursive(
         let (lhs_d, rhs_d) = step.choose_split(dataset, fsc);
 
         let left_child = learn_recursive(params, &lhs_d, &step.subset())
-            .unwrap_or(TreeNode::LeafNode(step.to_output(&lhs_d)));
+            .unwrap_or_else(|_| TreeNode::LeafNode(step.to_output(&lhs_d)));
         let right_child = learn_recursive(params, &rhs_d, &step.subset())
-            .unwrap_or(TreeNode::LeafNode(step.to_output(&rhs_d)));
+            .unwrap_or_else(|_| TreeNode::LeafNode(step.to_output(&rhs_d)));
         Ok(TreeNode::FeatureSplit {
             fid: fsc.fid,
             split: fsc.split,

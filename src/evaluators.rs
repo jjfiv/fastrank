@@ -134,7 +134,7 @@ impl SetEvaluator {
         orig_name: &str,
         judgments: Option<QuerySetJudgments>,
     ) -> Result<SetEvaluator, Box<dyn std::error::Error>> {
-        let (name, depth) = if let Some(at_point) = orig_name.find("@") {
+        let (name, depth) = if let Some(at_point) = orig_name.find('@') {
             let (lhs, rhs) = orig_name.split_at(at_point);
             let depth = rhs[1..]
                 .parse::<usize>()
@@ -255,7 +255,7 @@ impl Evaluator for ReciprocalRank {
 
 fn compute_dcg(gains: &[NotNan<f32>], depth: Option<usize>, ideal: bool) -> f64 {
     // Gain of 0.0 is a positive value, so we need to expand or contact to "depth" if it's given.
-    let mut gain_vector: Vec<NotNan<f32>> = gains.iter().cloned().collect();
+    let mut gain_vector: Vec<NotNan<f32>> = gains.to_vec();
     if ideal {
         gain_vector.sort_unstable();
         gain_vector.reverse();

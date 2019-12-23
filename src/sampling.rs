@@ -30,7 +30,7 @@ pub trait DatasetSampling {
 
 impl DatasetRef {
     fn get_ref_or_clone(&self) -> DatasetRef {
-        self.get_ref().unwrap_or(self.clone())
+        self.get_ref().unwrap_or_else(|| self.clone())
     }
 }
 
@@ -70,7 +70,7 @@ impl DatasetSampling for DatasetRef {
     fn with_instances(&self, instances: &[InstanceId]) -> SampledDatasetRef {
         SampledDatasetRef {
             parent: self.get_ref_or_clone(),
-            instances: instances.iter().cloned().collect(),
+            instances: instances.to_vec(),
             features: self.features(),
         }
     }

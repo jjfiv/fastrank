@@ -138,7 +138,7 @@ impl RankingDataset for DenseDataset {
         self.feature_names
             .get(&fid)
             .cloned()
-            .unwrap_or(format!("{}", fid.to_index()))
+            .unwrap_or_else(|| format!("{}", fid.to_index()))
     }
     /// Lookup a feature value for a particular instance.
     fn get_feature_value(&self, instance: InstanceId, fid: FeatureId) -> Option<f64> {

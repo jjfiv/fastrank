@@ -2,7 +2,6 @@ use crate::instance::FeatureRead;
 use crate::{FeatureId, Scored};
 
 use ordered_float::NotNan;
-use serde::{Deserialize, Serialize};
 
 pub trait Model: std::fmt::Debug {
     fn score(&self, features: &dyn FeatureRead) -> NotNan<f64>;
