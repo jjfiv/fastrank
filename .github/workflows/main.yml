@@ -33,6 +33,7 @@ jobs:
           cargo test --release
       - name: maturin build
         run: |
+          pip install --upgrade pip
           pip install -r requirements.txt
           pip install maturin
           maturin build --release
