@@ -31,20 +31,23 @@ jobs:
       - name: cargo test
         run: |
           cargo test --release
-      - name: py-install
+      - name: maturin build
         run: |
           pip install -r requirements.txt
           pip install maturin
           maturin build --release
-          pip install target/wheels/fastrank*.whl
-      - name: py-unittest
-        run: |
-          python -I -m unittest discover -s tests -v
       - uses: actions/upload-artifact@v1
         name: upload-wheel
         with:
           name: wheel-${{ matrix.platform }}
           path: target/wheels/
+      - name: maturin-develop
+        run: |
+          maturin develop --release
+      - name: py-unittest
+        run: |
+          python -I -m unittest discover -s tests -v
+
       - name: '[on-create] pypi-publish'
         if: github.event_name == 'create'
         env: 
