@@ -42,13 +42,12 @@ jobs:
         with:
           name: wheel-${{ matrix.platform }}
           path: target/wheels/
-      - name: maturin-develop
+      - name: pip install fastrank
         run: |
-          maturin develop --release
+          pip install target/wheels/fastrank-*.whl
       - name: py-unittest
         run: |
           python -I -m unittest discover -s tests -v
-
       - name: '[on-create] pypi-publish'
         if: github.event_name == 'create'
         env: 
