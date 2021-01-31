@@ -469,11 +469,11 @@ mod test {
     #[test]
     fn test_regression_tree() {
         let xs: Vec<f32> = [1, 1, 2, 3, 4, 5, 6, 7, 8, 9]
-            .into_iter()
+            .iter()
             .map(|x| *x as f32)
             .collect();
         let ys: Vec<NotNan<f32>> = [7, 7, 7, 7, 2, 2, 2, 12, 12, 12]
-            .into_iter()
+            .iter()
             .map(|y| NotNan::new(*y as f32).unwrap())
             .collect();
 

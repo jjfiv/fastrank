@@ -12,11 +12,10 @@
 //!
 //!
 use ordered_float::{FloatIsNan, NotNan};
+use fast_float;
 use std::fmt;
 use std::io;
 use std::num;
-
-//pub struct InstanceIter<'a>(Iterator<'a, Instance>);
 
 /// Custom error class to produce readable errors when input files are not correctly formatted.
 #[derive(Debug)]
@@ -35,6 +34,8 @@ pub enum ParseError {
     FeatureNum(num::ParseIntError),
     /// A feature value could not be parsed.
     FeatureVal(num::ParseFloatError),
+    /// A feature value could not be parsed (v2).
+    FeatureValNotFloat(fast_float::Error)
 }
 
 impl fmt::Display for ParseError {
@@ -83,12 +84,11 @@ impl Feature {
                 let (fid_str, fval_str) = tok.split_at(idx);
                 let fid = fid_str.parse::<u32>().map_err(ParseError::FeatureNum)?;
                 // Ditch first character of fval_str, which will be :
-                let fval = fval_str[1..]
-                    .parse::<f64>()
-                    .map_err(ParseError::FeatureVal)?;
+                let fval: f32 = fast_float::parse(&fval_str[1..])
+                    .map_err(ParseError::FeatureValNotFloat)?;
                 Ok(Feature {
                     idx: fid,
-                    value: fval as f32,
+                    value: fval,
                 })
             }
             None => {
@@ -159,34 +159,22 @@ impl Instance {
             }
         }
 
+        for tok in tokens {
+            inst.features.push(Feature::parse(tok)?);
+        }
+
         // Only invoke sort on data we've observed to be unsorted.
         // Check order and repeats correctness by assuming best-case.
         let mut needs_sorting = false;
-        let mut last_index: Option<u32> = None;
-        for tok in tokens {
-            let ftr = Feature::parse(tok)?;
-
-            if let Some(prev) = last_index {
-                // This number is less than the last, better sort it!
-                if ftr.idx < prev {
-                    needs_sorting = true;
-                } else if ftr.idx == prev {
-                    // This number is equal to the last; bad format.
-                    return Err(ParseError::MultipleDefinitions(
-                        inst.features.last().unwrap().clone(),
-                        ftr.clone(),
-                    ));
-                }
-            };
-            // What was the last feature we saw? Keep track.
-            last_index = Some(ftr.idx);
-
-            inst.features.push(ftr);
+        for i in 0..(inst.features.len() - 1) {
+            if inst.features[i].idx >= inst.features[i + 1].idx {
+                needs_sorting = true;
+            }
         }
 
         // Sort features by index so we have some guarantees about them.
         if needs_sorting {
-            inst.features.sort_by(|f1, f2| f1.idx.cmp(&f2.idx));
+            inst.features.sort_unstable_by(|f1, f2| f1.idx.cmp(&f2.idx));
             for i in 0..(inst.features.len() - 1) {
                 if inst.features[i].idx == inst.features[i + 1].idx {
                     return Err(ParseError::MultipleDefinitions(
@@ -376,6 +364,11 @@ mod tests {
                         return lhs == rhs;
                     }
                 }
+                FeatureValNotFloat(ref lhs) => {
+                    if let FeatureValNotFloat(ref rhs) = *other {
+                        return lhs == rhs;
+                    }
+                }
                 FeatureNoColon() => {
                     if let FeatureNoColon() = *other {
                         return true;
@@ -423,8 +416,8 @@ mod tests {
     fn must_have_float_values() {
         let f: Result<Feature, ParseError> = Feature::parse("1:what");
         assert!(f.is_err());
-        if let Err(FeatureVal(pfe)) = f {
-            assert_eq!(pfe, "what".parse::<f64>().unwrap_err());
+        if let Err(FeatureValNotFloat(pfe)) = f {
+            assert_eq!(pfe, fast_float::parse::<f32, _>("what").unwrap_err());
         } else {
             panic!("Error should be complaining about bad feature value.");
         }

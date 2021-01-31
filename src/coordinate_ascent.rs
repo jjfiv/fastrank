@@ -178,7 +178,7 @@ fn optimize_inner(
                     }
                 } // dir
 
-                (current_best.score - start_score)
+                current_best.score - start_score
             })
             .filter(|improvement| improvement > &tolerance)
             .count(); // current_feature
