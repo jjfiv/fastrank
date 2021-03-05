@@ -44,9 +44,15 @@ jobs:
           name: wheel-win64
           path: target/wheels/
     - name: pip install fastrank
+      shell: bash
       run: |
-          $wheel = Get-ChildItem target/wheels/fastrank-*.whl
-          pip install $wheel
+          pip install target/wheels/fastrank-*.whl
     - name: py-unittest
       run: |
           python -I -m unittest discover -s tests -v
+    - name: '[on-create] pypi-publish'
+      if: github.event_name == 'create'
+      shell: bash
+      env: 
+        MATURIN_PASSWORD: ${{ secrets.PYPI_TOKEN }}
+      run: maturin publish -b cffi --username __token__
