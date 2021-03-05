@@ -1,13 +1,9 @@
 import unittest
 import tempfile
 import numpy as np
-import json
-import sklearn
 from sklearn.datasets import load_svmlight_file
 from collections import Counter
-import fastrank
-from fastrank import CQRel, CDataset, CModel, query_json, TrainRequest
-import copy
+from fastrank import CQRel, CDataset, query_json, TrainRequest
 
 _FEATURE_EXPECTED_NDCG5 = {
     "0": 0.10882970494872854,
