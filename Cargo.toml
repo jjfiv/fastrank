@@ -1,6 +1,6 @@
 [package]
 name = "fastrank"
-version = "0.5.0"
+version = "0.6.0"
 authors = ["John Foley <jjfoley@smith.edu>"]
 edition = "2018"
 readme = "README.md"
@@ -29,7 +29,7 @@ fast-float = "0.2"
 [package.metadata.maturin]
 requires-dist = ["attrs", "cffi", "numpy"]
 classifier = [
-  "Programming Language :: Python :: 3.5",
+  "Programming Language :: Python :: 3.6",
   "License :: OSI Approved :: MIT License",
   "Operating System :: OS Independent",
 ]
