@@ -54,5 +54,5 @@ jobs:
         shell: bash
         env: 
           MATURIN_PASSWORD: ${{ secrets.PYPI_TOKEN }}
-        run: maturin publish -b cffi --username __token__
+        run: maturin publish --skip-existing -b cffi --username __token__
         
