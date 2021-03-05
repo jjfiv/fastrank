@@ -4,9 +4,11 @@ My most frequently used learning-to-rank algorithms ported to rust for efficienc
 
 Read my [blog-post](https://jjfoley.me/2019/10/11/fastrank-alpha.html) announcing the first public version: 0.4. It's alpha because I think the API needs work, not because there's any sort of known correctness or compatiblity issues.
 
-## Windows not supported
+## Python Requirement
 
-I'm in progress of finding a VM to test this with; if you're interested in Windows support, let me know. Tracking issue here: [Windows Support](https://github.com/jjfiv/fastrank/issues/30).
+ - 0.5 and earlier require only Python 3.5, but no windows builds were pushed.
+ - 0.6 requires Python 3.6 due to EOL for Python 3.5 becoming prevalent in the latest pip.
+ - 0.7 and forward will require Python 3.7 so we can use the standard @dataclass annotation and drop the attrs dependency.
 
 ## Python Usage 
 
