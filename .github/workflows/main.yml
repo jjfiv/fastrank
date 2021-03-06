@@ -42,7 +42,7 @@ jobs:
     needs: check
     strategy:
       matrix:
-        platform: [ macOS-latest windows-latest ]
+        platform: [ macOS-latest, windows-latest ]
     runs-on: ${{ matrix.platform }}
     steps:
       - name: checkout
