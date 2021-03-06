@@ -6,8 +6,8 @@ use crate::sampling::DatasetSampling;
 use crate::stats;
 use crate::Scored;
 use crate::{FeatureId, InstanceId};
-use ordered_float::NotNan;
 use oorandom::Rand64;
+use ordered_float::NotNan;
 use rayon::prelude::*;
 use std::cmp;
 

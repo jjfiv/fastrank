@@ -11,8 +11,8 @@
 //!
 //!
 //!
-use ordered_float::{FloatIsNan, NotNan};
 use fast_float;
+use ordered_float::{FloatIsNan, NotNan};
 use std::fmt;
 use std::io;
 use std::num;
@@ -35,7 +35,7 @@ pub enum ParseError {
     /// A feature value could not be parsed.
     FeatureVal(num::ParseFloatError),
     /// A feature value could not be parsed (v2).
-    FeatureValNotFloat(fast_float::Error)
+    FeatureValNotFloat(fast_float::Error),
 }
 
 impl fmt::Display for ParseError {
@@ -84,8 +84,8 @@ impl Feature {
                 let (fid_str, fval_str) = tok.split_at(idx);
                 let fid = fid_str.parse::<u32>().map_err(ParseError::FeatureNum)?;
                 // Ditch first character of fval_str, which will be :
-                let fval: f32 = fast_float::parse(&fval_str[1..])
-                    .map_err(ParseError::FeatureValNotFloat)?;
+                let fval: f32 =
+                    fast_float::parse(&fval_str[1..]).map_err(ParseError::FeatureValNotFloat)?;
                 Ok(Feature {
                     idx: fid,
                     value: fval,
@@ -422,5 +422,4 @@ mod tests {
             panic!("Error should be complaining about bad feature value.");
         }
     }
-
 }

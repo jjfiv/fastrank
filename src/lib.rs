@@ -8,7 +8,6 @@ pub(crate) use crate::core::FeatureId;
 pub(crate) use crate::core::InstanceId;
 pub(crate) use crate::core::Scored;
 
-pub mod randutil;
 /// Contains code for feature-at-a-time non-differentiable optimization.
 pub mod coordinate_ascent;
 pub mod dataset;
@@ -22,6 +21,7 @@ pub mod libsvm;
 pub mod model;
 pub mod normalizers;
 pub mod qrel;
+pub mod randutil;
 pub mod sampling;
 
 pub mod json_api;

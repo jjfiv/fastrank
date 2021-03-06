@@ -5,7 +5,7 @@ from .clib import CQRel, query_json
 
 
 @attr.s
-class CoordinateAscentParams(object):
+class CoordinateAscentParams:
     """
     This class represents the configuration and parameters available for FastRank's CoordinateAscent Model.
     """
@@ -33,7 +33,7 @@ class CoordinateAscentParams(object):
 
 
 @attr.s
-class RandomForestParams(object):
+class RandomForestParams:
     """
     This class represents the configuration and parameters available for FastRank's Random Forest Model.
     """
@@ -61,7 +61,7 @@ class RandomForestParams(object):
 
 
 @attr.s
-class TrainRequest(object):
+class TrainRequest:
     """
     This class represents the configuration and parameters available to train a model.
 
@@ -72,8 +72,9 @@ class TrainRequest(object):
     """
 
     measure = attr.ib(type=str, default="ndcg")
-    params= attr.ib(type=Union[CoordinateAscentParams, RandomForestParams],
-        factory=CoordinateAscentParams
+    params = attr.ib(
+        type=Union[CoordinateAscentParams, RandomForestParams],
+        factory=CoordinateAscentParams,
     )
     judgments = attr.ib(type=CQRel, default=None)
 

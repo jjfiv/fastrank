@@ -11,9 +11,7 @@ use std::error::Error;
 use std::f64;
 use std::sync::Arc;
 
-pub fn load_feature_names_json(
-    path: &str,
-) -> Result<HashMap<FeatureId, String>, Box<dyn Error>> {
+pub fn load_feature_names_json(path: &str) -> Result<HashMap<FeatureId, String>, Box<dyn Error>> {
     let reader = io_helper::open_reader(path)?;
     let data: HashMap<String, String> = serde_json::from_reader(reader)?;
     let data: Result<HashMap<FeatureId, String>, _> = data

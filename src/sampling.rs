@@ -1,8 +1,8 @@
 use crate::dataset::{DatasetRef, RankingDataset, SampledDatasetRef};
+use crate::randutil;
 use crate::FeatureId;
 use crate::InstanceId;
 use oorandom::Rand64;
-use crate::randutil;
 use std::cmp;
 use std::collections::HashSet;
 
@@ -49,10 +49,7 @@ impl DatasetSampling for DatasetRef {
         let features = randutil::sample_without_replacement(&features, rand, n_features);
         let queries_chosen = randutil::sample_without_replacement(&queries, rand, n_queries);
         // Turn into a set so we can filter instances.
-        let queries: HashSet<&str> = queries_chosen
-            .iter()
-            .map(|s| s.as_str())
-            .collect();
+        let queries: HashSet<&str> = queries_chosen.iter().map(|s| s.as_str()).collect();
         let mut instances: Vec<InstanceId> = Vec::new();
 
         for (qid, qinst) in self.instances_by_query() {
@@ -116,7 +113,6 @@ impl DatasetSampling for DatasetRef {
             features: self.features(),
         }
     }
-
 
     fn train_test(
         &self,

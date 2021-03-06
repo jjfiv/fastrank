@@ -14,8 +14,8 @@ use crate::json_api::{FastRankModelParams, TrainRequest};
 use crate::model::ModelEnum;
 use crate::qrel::QuerySetJudgments;
 use crate::random_forest::RandomForestParams;
-use crate::FeatureId;
 use crate::sampling::DatasetSampling;
+use crate::FeatureId;
 
 use crate::{CDataset, CModel, CQRel, CResult};
 
@@ -206,7 +206,9 @@ pub(crate) fn result_model_query_json(
     Ok(response)
 }
 
-pub(crate) fn result_exec_json(query_str: Result<&str, Box<dyn Error>>) -> Result<String, Box<dyn Error>> {
+pub(crate) fn result_exec_json(
+    query_str: Result<&str, Box<dyn Error>>,
+) -> Result<String, Box<dyn Error>> {
     let response = match query_str? {
         "coordinate_ascent_defaults" => serde_json::to_string(&TrainRequest {
             measure: "ndcg".to_string(),

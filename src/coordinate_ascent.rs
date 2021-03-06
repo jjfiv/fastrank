@@ -1,11 +1,11 @@
 use crate::dataset::RankingDataset;
 use crate::evaluators::SetEvaluator;
 use crate::model::{DenseLinearRankingModel, ModelEnum, WeightedEnsemble};
+use crate::randutil::shuffle;
 use crate::FeatureId;
 use crate::Scored;
-use ordered_float::NotNan;
 use oorandom::Rand64;
-use crate::randutil::shuffle;
+use ordered_float::NotNan;
 use rayon::prelude::*;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -211,12 +211,7 @@ impl CoordinateAscentParams {
         }
 
         let states: Vec<_> = (0..self.num_restarts)
-            .map(|restart_id| {
-                (
-                    restart_id,
-                    Rand64::new(rand.rand_u64().into()),
-                )
-            })
+            .map(|restart_id| (restart_id, Rand64::new(rand.rand_u64().into())))
             .collect();
 
         let mut history: Vec<Scored<DenseLinearRankingModel>> = Vec::new();

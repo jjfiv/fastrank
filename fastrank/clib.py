@@ -1,8 +1,7 @@
-import cffi
 import json
 from .fastrank import lib, ffi
-import numpy as np
 from typing import Dict, Set, List
+from .training import TrainRequest
 
 # Keep in sync with fastrank/src/model.rs : fastrank::model::ModelEnum
 _MODEL_TYPES = ["SingleFeature", "Linear", "DecisionTree", "Ensemble"]
@@ -10,7 +9,7 @@ _MODEL_TYPES = ["SingleFeature", "Linear", "DecisionTree", "Ensemble"]
 
 def _handle_rust_str(result) -> str:
     """
-    This method decodes bytes to UTF-8 and makes a new python string object. 
+    This method decodes bytes to UTF-8 and makes a new python string object.
     It then frees the bytes that Rust allocated correctly.
     """
     try:
@@ -23,7 +22,7 @@ def _handle_rust_str(result) -> str:
 
 def _handle_c_result(c_result):
     """
-    This handles the logical-OR struct of the CDataset { error_message, success } 
+    This handles the logical-OR struct of the CDataset { error_message, success }
     where both the wrapper and the error_message will be freed by the end of this function.
 
     The success pointer is returned or an error is raised!
@@ -61,10 +60,10 @@ def _maybe_raise_error_json(response):
     return
 
 
-class CQRel(object):
+class CQRel:
     """
-    This class represents a loaded set of TREC relevance judgments. 
-    
+    This class represents a loaded set of TREC relevance judgments.
+
     This is important because some measures supported by fastrank require the total number of relevance judgments (e.g., MAP) or the maximum ideal gain (e.g., NDCG).
 
     Use :func:`~load_file` or :func:`~from_dict` to create one of these.
@@ -124,7 +123,7 @@ class CQRel(object):
         raise ValueError("No qid={0} in cqrel: {1}".format(qid, self.queries()))
 
 
-class CModel(object):
+class CModel:
     """
     Usually you're going to get this from:
 
@@ -145,7 +144,7 @@ class CModel(object):
     @staticmethod
     def from_dict(model_json: Dict) -> "CModel":
         """Create a model from a python representation.
-        
+
         >>> model = CModel.from_dict(json.load("saved_model.json"))
         """
         CModel._check_model_json(model_json)
@@ -173,7 +172,7 @@ class CModel(object):
 
     def to_dict(self):
         """Turn the opaque Rust model pointer into inspectable JSON structure. This ties nicely to :func:`~from_dict`.
-        
+
         >>> model_copy = CModel.from_dict(model.to_dict())
 
         After which both ``model_copy`` and ``model`` will have equivalent models.
@@ -184,7 +183,7 @@ class CModel(object):
         return str(self.to_dict())
 
 
-class CDataset(object):
+class CDataset:
     """
     This class abstracts access to a rust-owned dataset.
 
@@ -277,7 +276,7 @@ class CDataset(object):
 
     def subsample_queries(self, queries: List[str]) -> "CDataset":
         """
-        Construct a subset of this dataset from the given query ids. 
+        Construct a subset of this dataset from the given query ids.
         This can be used to implement train/test splits or cross-validation.
 
         >>> train = dataset.subsample_queries(["001", "002"])
@@ -303,7 +302,7 @@ class CDataset(object):
 
     def subsample_feature_names(self, features: List[str]) -> "CDataset":
         """
-        Construct a subset of this dataset from the given features. 
+        Construct a subset of this dataset from the given features.
         This can be used to experiment with feature subsets and do ablation studies.
 
         >>> features = dataset.feature_names()
@@ -322,11 +321,9 @@ class CDataset(object):
         child.numpy_arrays_to_keep = self.numpy_arrays_to_keep
         return child
 
-    def train_model(self, train_req: "TrainRequest") -> CModel:
+    def train_model(self, train_req: TrainRequest) -> CModel:
         """
         Train a Model on this Dataset.
-        
-        TODO: make this accept a :class:`~fastrank.TrainRequest` object.
         """
         self._require_init()
         train_req_str = json.dumps(train_req.to_dict()).encode("utf-8")
@@ -420,8 +417,8 @@ class CDataset(object):
         depth=0,
     ) -> int:
         """
-        Save output of model on this dataset to output_path with name system_name. 
-        
+        Save output of model on this dataset to output_path with name system_name.
+
         :param model: Get results from this model.
         :type model: CModel
         :param output_path: Save results in TREC Run format to this file.
@@ -437,12 +434,14 @@ class CDataset(object):
         """
         self._require_init()
         model._require_init()
-        output_path = output_path.encode("utf-8")
-        system_name = system_name.encode("utf-8")
         response = json.loads(
             _handle_rust_str(
                 lib.predict_to_trecrun(
-                    model.pointer, self.pointer, output_path, system_name, depth
+                    model.pointer,
+                    self.pointer,
+                    output_path.encode("utf-8"),
+                    system_name.encode("utf-8"),
+                    depth,
                 )
             )
         )
@@ -461,8 +460,8 @@ def query_json(message: str):
     This method sends any old python object as input into the Rust exec_json call.
     The request is encoded on the way in.
 
-    Returns a JSON object decoded 'loads' to python. 
-    
+    Returns a JSON object decoded 'loads' to python.
+
     Consider this private if you can.
     """
     command = message.encode("utf-8")
