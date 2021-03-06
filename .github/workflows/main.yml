@@ -84,11 +84,8 @@ jobs:
       - name: checkout
         uses: actions/checkout@v1
       - name: Setup Rust environment
-        uses: actions-rs/toolchain@v1
-        with:
-            profile: minimal
-            toolchain: stable
-            override: true
+        run: |
+          rustup default 1.50.0
       - name: maturin build --release
         run: |
           pip install --upgrade pip
