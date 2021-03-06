@@ -1,7 +1,6 @@
 import json
 from .fastrank import lib, ffi
 from typing import Dict, Set, List
-from .training import TrainRequest
 
 # Keep in sync with fastrank/src/model.rs : fastrank::model::ModelEnum
 _MODEL_TYPES = ["SingleFeature", "Linear", "DecisionTree", "Ensemble"]
@@ -321,7 +320,7 @@ class CDataset:
         child.numpy_arrays_to_keep = self.numpy_arrays_to_keep
         return child
 
-    def train_model(self, train_req: TrainRequest) -> CModel:
+    def train_model(self, train_req: 'TrainRequest') -> CModel:
         """
         Train a Model on this Dataset.
         """
