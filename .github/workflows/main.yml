@@ -9,12 +9,8 @@ on:
     - cron:  '23 23 * * 4'
 
 jobs:
-  build:
-    strategy:
-      matrix:
-        platform: [ ubuntu-latest, macOS-latest, windows-latest ]
-    runs-on: ${{ matrix.platform }}
-
+  check:
+    runs-on: ubuntu-latest
     steps:
       - name: checkout
         uses: actions/checkout@v1
@@ -30,8 +26,36 @@ jobs:
           python-version: 3.6
       - name: cargo test
         run: |
-          cargo test --release
-      - name: maturin build
+          cargo test
+      - name: maturin develop
+        run: |
+          pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install maturin
+          maturin develop
+      - name: unittest
+        run: |
+          python -I -m unittest discover -s tests -v
+  build-mac-win:
+    needs: check
+    strategy:
+      matrix:
+        platform: [ macOS-latest windows-latest ]
+    runs-on: ${{ matrix.platform }}
+    steps:
+      - name: checkout
+        uses: actions/checkout@v1
+      - name: Setup Rust environment
+        uses: actions-rs/toolchain@v1
+        with:
+            profile: minimal
+            toolchain: stable
+            override: true
+      - name: Setup Python environment
+        uses: actions/setup-python@v2.1.4
+        with:
+          python-version: 3.6
+      - name: maturin build --release
         run: |
           pip install --upgrade pip
           pip install -r requirements.txt
@@ -42,17 +66,43 @@ jobs:
         with:
           name: wheel-${{ matrix.platform }}
           path: target/wheels/
-      - name: pip install fastrank
-        shell: bash
-        run: |
-          pip install target/wheels/fastrank-*.whl
-      - name: py-unittest
-        run: |
-          python -I -m unittest discover -s tests -v
       - name: '[on-create] pypi-publish'
         if: github.event_name == 'create'
         shell: bash
         env: 
           MATURIN_PASSWORD: ${{ secrets.PYPI_TOKEN }}
-        run: maturin publish --skip-existing -b cffi --username __token__
+        run: |
+          rm target/wheels/fastrank*.tar.gz # delete source
+          maturin publish -b cffi --username __token__
+  build-manylinux2010:
+    needs: check
+    runs-on: ubuntu-latest
+    container: konstin2/maturin:master
+    steps:
+      - name: checkout
+        uses: actions/checkout@v1
+      - name: Setup Rust environment
+        uses: actions-rs/toolchain@v1
+        with:
+            profile: minimal
+            toolchain: stable
+            override: true
+      - name: maturin build --release
+        run: |
+          pip install --upgrade pip
+          pip install -r requirements.txt
+          maturin build --release
+      - uses: actions/upload-artifact@v1
+        name: upload-wheel
+        with:
+          name: wheel-manylinux2010
+          path: target/wheels/
+      - name: '[on-create] pypi-publish'
+        if: github.event_name == 'create'
+        shell: bash
+        env: 
+          MATURIN_PASSWORD: ${{ secrets.PYPI_TOKEN }}
+        run: |
+          # let manylinux build upload the source bindings
+          maturin publish -b cffi --username __token__
         
