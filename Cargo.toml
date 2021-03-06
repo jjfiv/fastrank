@@ -16,7 +16,7 @@ crate-type = ["cdylib"]
 [dependencies]
 libc = "0.2"
 oorandom = "=11.1.0"
-bzip2 = "0.3"
+bzip2 = "0.4"
 flate2 = "1.0"
 zstd = "0.4"
 rayon = "1.2"

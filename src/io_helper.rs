@@ -40,7 +40,7 @@ pub fn open_writer(file_name: &str) -> Result<Box<dyn Write>> {
     } else if file_name.ends_with(".bz2") {
         Ok(Box::new(BufWriter::new(BzEncoder::new(
             fp,
-            bzip2::Compression::Default,
+            bzip2::Compression::default(),
         ))))
     } else {
         Ok(Box::new(BufWriter::new(fp)))
