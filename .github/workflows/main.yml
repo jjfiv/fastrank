@@ -23,7 +23,7 @@ jobs:
       - name: Setup Python environment
         uses: actions/setup-python@v2.1.4
         with:
-          python-version: 3.6
+          python-version: 3.7
       - name: cargo test
         run: |
           cargo test
@@ -56,7 +56,7 @@ jobs:
       - name: Setup Python environment
         uses: actions/setup-python@v2.1.4
         with:
-          python-version: 3.6
+          python-version: 3.7
       - name: maturin build --release
         run: |
           pip install --upgrade pip
