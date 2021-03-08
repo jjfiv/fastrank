@@ -320,7 +320,7 @@ class CDataset:
         child.numpy_arrays_to_keep = self.numpy_arrays_to_keep
         return child
 
-    def train_model(self, train_req: 'TrainRequest') -> CModel:
+    def train_model(self, train_req: "TrainRequest") -> CModel:
         """
         Train a Model on this Dataset.
         """
