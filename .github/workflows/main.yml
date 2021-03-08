@@ -69,7 +69,7 @@ jobs:
           name: wheel-${{ matrix.platform }}
           path: target/wheels/
       - name: '[on-create] pypi-publish'
-        if: github.event_name == 'create'
+        if: (github.event_name == 'create' && github.event_ref == 'tag')
         shell: bash
         env: 
           MATURIN_PASSWORD: ${{ secrets.PYPI_TOKEN }}
@@ -97,7 +97,7 @@ jobs:
           name: wheel-manylinux2010
           path: target/wheels/
       - name: '[on-create] pypi-publish'
-        if: github.event_name == 'create'
+        if: (github.event_name == 'create' && github.event_ref == 'tag')
         shell: bash
         env: 
           MATURIN_PASSWORD: ${{ secrets.PYPI_TOKEN }}
