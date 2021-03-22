@@ -150,7 +150,7 @@ class CModel:
         json_str = json.dumps(model_json).encode("utf-8")
         return CModel(_handle_c_result(lib.model_from_json(json_str)))
 
-    def predict_scores(self, dataset: 'CDataset') -> Dict[str, Dict[str, float]]:
+    def predict_scores(self, dataset: 'CDataset') -> Dict[int, float]:
         json_str = _handle_rust_str(_handle_c_result(lib.predict_scores(self.pointer, dataset.pointer)))
         return json.loads(json_str)
 
@@ -411,7 +411,7 @@ class CDataset:
         _maybe_raise_error_json(response)
         return response
 
-    def predict_scores(self, model: CModel) -> Dict[str, Dict[str, float]]:
+    def predict_scores(self, model: CModel) -> Dict[int, float]:
         return model.predict_scores(self)
 
     def predict_trecrun(

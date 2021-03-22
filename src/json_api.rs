@@ -53,24 +53,19 @@ pub fn do_training(
 pub fn predict_scores(
     model: &ModelEnum,
     dataset: &dyn RankingDataset,
-) -> Result<HashMap<String, HashMap<String, f64>>, Box<dyn Error>> {
+) -> Result<HashMap<usize, f64>, Box<dyn Error>> {
     let mut scores = HashMap::default();
 
-    for (qid, docs) in dataset.instances_by_query().iter() {
-        let mut q_scores: HashMap<String, f64> = HashMap::default();
+    for (_qid, docs) in dataset.instances_by_query().iter() {
         // Predict for every document:
         for index in docs.iter().cloned() {
             let score = dataset.score(index, model);
-            // TODO make this an error.
-            q_scores.insert(
-                dataset
-                    .document_name(index)
-                    .expect("Name should be present!")
-                    .to_owned(),
+            // TODO make this an error?
+            scores.insert(
+                index.to_index(),
                 score.into_inner(),
             );
         }
-        scores.insert(qid.clone(), q_scores);
     }
 
     Ok(scores)
