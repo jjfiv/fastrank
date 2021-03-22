@@ -255,6 +255,13 @@ pub extern "C" fn evaluate_by_query(
 }
 
 #[no_mangle]
+pub extern "C" fn predict_scores(model: *const CModel, dataset: *const CDataset) -> *const c_void {
+    let model: Option<&CModel> = unsafe { (model as *const CModel).as_ref() };
+    let dataset: Option<&CDataset> = unsafe { (dataset as *const CDataset).as_ref() };
+    result_to_json(result_predict_scores(model, dataset))
+}
+
+#[no_mangle]
 pub extern "C" fn predict_to_trecrun(
     model: *const CModel,
     dataset: *const CDataset,

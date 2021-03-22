@@ -8,6 +8,7 @@ use crate::model::ModelEnum;
 use crate::qrel::QuerySetJudgments;
 use crate::random_forest;
 use crate::random_forest::RandomForestParams;
+use std::collections::HashMap;
 
 #[derive(Serialize, Deserialize)]
 pub struct TrainRequest {
@@ -47,6 +48,32 @@ pub fn do_training(
             ModelEnum::Ensemble(random_forest::learn_ensemble(&params, dataset, &evaluator))
         }
     })
+}
+
+pub fn predict_scores(
+    model: &ModelEnum,
+    dataset: &dyn RankingDataset,
+) -> Result<HashMap<String, HashMap<String, f64>>, Box<dyn Error>> {
+    let mut scores = HashMap::default();
+
+    for (qid, docs) in dataset.instances_by_query().iter() {
+        let mut q_scores: HashMap<String, f64> = HashMap::default();
+        // Predict for every document:
+        for index in docs.iter().cloned() {
+            let score = dataset.score(index, model);
+            // TODO make this an error.
+            q_scores.insert(
+                dataset
+                    .document_name(index)
+                    .expect("Name should be present!")
+                    .to_owned(),
+                score.into_inner(),
+            );
+        }
+        scores.insert(qid.clone(), q_scores);
+    }
+
+    Ok(scores)
 }
 
 /// Given a model and a dataset, save a trecrun file of predictions with a given system_name to output_path.

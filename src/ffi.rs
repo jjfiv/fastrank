@@ -251,6 +251,16 @@ pub(crate) fn result_evaluate_by_query(
     Ok(serde_json::to_string(&output)?)
 }
 
+pub(crate) fn result_predict_scores(
+    model: Option<&CModel>,
+    dataset: Option<&CDataset>,
+) -> Result<String, Box<dyn Error>> {
+    let model = &require_pointer("Model", model)?.actual;
+    let dataset = &require_pointer("Dataset", dataset)?.reference;
+    let written = json_api::predict_scores(model, dataset)?;
+    Ok(serde_json::to_string(&written)?)
+}
+
 pub(crate) fn result_predict_to_trecrun(
     model: Option<&CModel>,
     dataset: Option<&CDataset>,
