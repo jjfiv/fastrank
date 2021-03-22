@@ -153,7 +153,7 @@ class CModel:
     def predict_scores(self, dataset: 'CDataset') -> Dict[int, float]:
         response = json.loads(_handle_rust_str(lib.predict_scores(self.pointer, dataset.pointer)))
         _maybe_raise_error_json(response)
-        return response
+        return dict((int(k), v) for k,v in response.items())
 
     def __del__(self):
         if self.pointer is not None:

@@ -201,6 +201,8 @@ class TestRustAPI(unittest.TestCase):
         model = train.train_model(TestRustAPI.train_req)
         model._require_init()
         scores = model.predict_scores(train)
+        assert 0 in scores
+        assert len(scores) - 1 in scores
         assert len(scores) == len(train_y)
 
     def test_evaluate(self):
