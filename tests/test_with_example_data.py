@@ -42,16 +42,17 @@ _EXPECTED_FEATURE_NAMES = set(
         "caption_position",
     ]
 )
-
+QREL = CQRel.load_file("examples/newsir18-entity.qrel")
+RD = CDataset.open_ranksvm(
+            "examples/trec_news_2018.train",
+            "examples/trec_news_2018.features.json",
+        )
 
 class TestRustAPI(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.qrel = CQRel.load_file("examples/newsir18-entity.qrel")
-        cls.rd = CDataset.open_ranksvm(
-            "examples/trec_news_2018.train",
-            "examples/trec_news_2018.features.json",
-        )
+        cls.qrel = QREL
+        cls.rd = RD
         # Test out "from_numpy:"
         (cls.train_X, cls.train_y, cls.train_qid) = load_svmlight_file(
             "examples/trec_news_2018.train",
@@ -199,6 +200,8 @@ class TestRustAPI(unittest.TestCase):
 
         model = train.train_model(TestRustAPI.train_req)
         model._require_init()
+        scores = model.predict_scores(train)
+        assert len(scores) == len(train_y)
 
     def test_evaluate(self):
         rd = TestRustAPI.rd
