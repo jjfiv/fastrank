@@ -1,9 +1,17 @@
+import fastrank
+from fastrank.training import CoordinateAscentParams, RandomForestParams
 import unittest
 import tempfile
 import numpy as np
+from typing import List
 from sklearn.datasets import load_svmlight_file
 from collections import Counter
 from fastrank import CQRel, CDataset, query_json, TrainRequest
+
+
+def mean(xs: List[float]) -> float:
+    """Strongly type a mean; since pyright hates np.mean"""
+    return sum(xs) / len(xs)
 
 _FEATURE_EXPECTED_NDCG5 = {
     "0": 0.10882970494872854,
@@ -66,6 +74,9 @@ class TestRustAPI(unittest.TestCase):
         ca_params.quiet = True
         cls.model = cls.rd.train_model(TestRustAPI.train_req)
 
+    def test_version(self):
+        self.assertEqual(fastrank.__version__, '0.7.0')
+
     def test_cqrel_serialization(self):
         qrel = TestRustAPI.qrel.to_dict()
         qrel2 = CQRel.from_dict(qrel)
@@ -107,12 +118,30 @@ class TestRustAPI(unittest.TestCase):
         expected_count = sum(count_by_qid[int(q)] for q in _SUBSET)
         assert sample_rd.num_instances() == expected_count
 
+        # Train a model:
+        train_req = TestRustAPI.train_req.clone()
+        lp: CoordinateAscentParams = train_req.params # type:ignore
+        lp.num_restarts = 1
+        lp.num_max_iterations = 1
+        lp.step_base = 1.0
+        lp.normalize = False
+        lp.init_random = False
+        model = sample_rd.train_model(train_req) 
+        sparse = model.predict_scores(sample_rd)
+        assert len(sparse) == sample_rd.num_instances()
+        dense = model.predict_dense_scores(sample_rd)
+        assert len(dense) > len(sparse)
+        # make sure that all the ids we asked for are present:
+        for (_qid, ids) in sample_rd.instances_by_query().items():
+            for num in ids:
+                assert num < len(dense)
+
     def test_subsample_features(self):
         rd = TestRustAPI.rd
         name_to_index = rd.feature_name_to_index()
         # single feature model:
         train_req = TestRustAPI.train_req.clone()
-        lp = train_req.params
+        lp: CoordinateAscentParams = train_req.params # type:ignore
         lp.num_restarts = 1
         lp.num_max_iterations = 1
         lp.step_base = 1.0
@@ -135,7 +164,7 @@ class TestRustAPI(unittest.TestCase):
                 if i == my_index:
                     pass
                 else:
-                    self.assertAlmostEqual(w, 0.0, "Every other weight should be zero.")
+                    self.assertAlmostEqual(w, 0.0, msg="Every other weight should be zero.")
 
     def test_train_model(self):
         rd = TestRustAPI.rd
@@ -147,22 +176,24 @@ class TestRustAPI(unittest.TestCase):
         rd = TestRustAPI.rd
         train_req = TrainRequest.random_forest()
         train_req.measure = "ndcg@5"
-        train_req.params.num_trees = 10
-        train_req.params.seed = 42
-        train_req.params.min_leaf_support = 1
-        train_req.params.max_depth = 10
-        train_req.params.split_candidates = 32
-        train_req.params.quiet = True
+        rfp: RandomForestParams = train_req.params # type:ignore
+        rfp.num_trees = 10
+        rfp.seed = 42
+        rfp.min_leaf_support = 1
+        rfp.max_depth = 10
+        rfp.split_candidates = 32
+        rfp.quiet = True
+
 
         measures = []
         for _ in range(10):
             model = rd.train_model(train_req)
             self.assertEqual(len(model.to_dict()["Ensemble"]["weights"]), 10)
             # for this particular dataset, there should be no difference between calculating with and without qrels:
-            ndcg5_with = np.mean(
+            ndcg5_with: float = mean(
                 list(rd.evaluate(model, "ndcg@5", TestRustAPI.qrel).values())
             )
-            ndcg5_without = np.mean(list(rd.evaluate(model, "ndcg@5").values()))
+            ndcg5_without: float = mean(list(rd.evaluate(model, "ndcg@5").values()))
             self.assertAlmostEqual(ndcg5_with, ndcg5_without)
             measures.append(ndcg5_with)
         for m in measures:
@@ -177,7 +208,10 @@ class TestRustAPI(unittest.TestCase):
         # ensure a deep measure is the same:
         map_orig = rd.evaluate(model, "map")
         map_after_json = rd.evaluate(model.from_dict(model.to_dict()), "map")
-        self.assertAlmostEqual(map_orig, map_after_json)
+        self.assertEqual(len(map_orig), len(map_after_json))
+        self.assertEqual(map_orig.keys(), map_after_json.keys())
+        for key, val in map_orig.items():
+            self.assertAlmostEqual(val, map_after_json[key])
 
     def test_from_numpy(self):
         # this loader supports zero-based!
@@ -190,6 +224,7 @@ class TestRustAPI(unittest.TestCase):
         train = CDataset.from_numpy(train_X, train_y, train_qid)
 
         (train_N, train_D) = train_X.shape
+        assert train.is_sampled() == False
         assert train.num_features() == train_D
         assert train.num_instances() == train_N
         assert train.queries() == _EXPECTED_QUERIES
@@ -223,7 +258,9 @@ class TestRustAPI(unittest.TestCase):
 
         first_ten_queries = sorted(measures_by_query.keys())[:10]
 
+        assert rd.is_sampled() == False
         partial = rd.subsample_queries(first_ten_queries)
+        assert partial.is_sampled() == True
         self.assertEqual(len(partial.instances_by_query()), len(first_ten_queries))
 
         partial_scores = partial.evaluate(model, measure)
@@ -248,6 +285,8 @@ class TestRustAPI(unittest.TestCase):
         for _ in range(2):
             self.assertEqual(rust.measure, py.measure)
             self.assertEqual(rust.judgments, py.judgments)
+            assert isinstance(rust.params, CoordinateAscentParams)
+            assert isinstance(py.params, CoordinateAscentParams)
             self.assertEqual(rust.params.num_restarts, py.params.num_restarts)
             self.assertEqual(
                 rust.params.num_max_iterations, py.params.num_max_iterations

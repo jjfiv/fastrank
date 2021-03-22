@@ -28,6 +28,7 @@ pub trait RankingDataset: Send + Sync {
     fn get_ref(&self) -> Option<DatasetRef>;
     fn features(&self) -> Vec<FeatureId>;
     fn n_dim(&self) -> u32;
+    fn is_sampled(&self) -> bool;
     fn instances(&self) -> Vec<InstanceId>;
     fn instances_by_query(&self) -> HashMap<String, Vec<InstanceId>>;
 
@@ -55,6 +56,9 @@ pub struct DatasetRef {
 impl RankingDataset for DatasetRef {
     fn get_ref(&self) -> Option<DatasetRef> {
         Some(self.data.get_ref().unwrap_or(self.clone()))
+    }
+    fn is_sampled(&self) -> bool {
+        return self.data.is_sampled()
     }
     fn features(&self) -> Vec<FeatureId> {
         self.data.features()
@@ -112,6 +116,9 @@ impl SampledDatasetRef {
 impl RankingDataset for SampledDatasetRef {
     fn get_ref(&self) -> Option<DatasetRef> {
         self.parent.get_ref()
+    }
+    fn is_sampled(&self) -> bool {
+        return true
     }
     fn features(&self) -> Vec<FeatureId> {
         self.features.clone()
@@ -269,6 +276,9 @@ impl RankingDataset for LoadedRankingDataset {
     fn get_ref(&self) -> Option<DatasetRef> {
         None
         //panic!("This is too expensive!")
+    }
+    fn is_sampled(&self) -> bool {
+        false
     }
     fn features(&self) -> Vec<FeatureId> {
         self.features.clone()

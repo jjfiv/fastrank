@@ -81,6 +81,9 @@ impl RankingDataset for DenseDataset {
         None
         //panic!("Use into_ref() instead!")
     }
+    fn is_sampled(&self) -> bool {
+        false
+    }
     fn features(&self) -> Vec<FeatureId> {
         (0..self.n_features)
             .map(|i| FeatureId::from_index(i))

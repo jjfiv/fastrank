@@ -150,7 +150,29 @@ class CModel:
         json_str = json.dumps(model_json).encode("utf-8")
         return CModel(_handle_c_result(lib.model_from_json(json_str)))
 
+    def predict_dense_scores(self, dataset: 'CDataset', missing: float = float('nan')) -> List[float]:
+        """
+        Use the model to predict scores for each element of the given dataset.
+        Returns a dense list of scores where the indexes should be aligned with your input.
+        Substitutes ``missing`` (default=NaN) for any indices not in this dataset.
+        """
+        output = []
+        dict_scores = self.predict_scores(dataset)
+        for (index, score) in sorted(dict_scores.items()):
+            while len(output) < index:
+                output.append(missing)
+            if index == len(output):
+                output.append(score)
+            else:
+                output[index] = score
+        return output
+
+
     def predict_scores(self, dataset: 'CDataset') -> Dict[int, float]:
+        """
+        Use the model to predict scores for each element of the given dataset.
+        Returns a dictionary of instance-index to score.
+        """
         response = json.loads(_handle_rust_str(lib.predict_scores(self.pointer, dataset.pointer)))
         _maybe_raise_error_json(response)
         return dict((int(k), v) for k,v in response.items())
@@ -343,6 +365,10 @@ class CDataset:
         )
         _maybe_raise_error_json(response)
         return response
+
+    def is_sampled(self) -> bool:
+        """Returns true if this dataset has been sampled (instances or features)."""
+        return self._query_json("is_sampled")
 
     def num_features(self) -> int:
         """Return the number of features available in this dataset."""
