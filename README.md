@@ -9,7 +9,8 @@ Read my [blog-post](https://jjfoley.me/2019/10/11/fastrank-alpha.html) announcin
  - 0.5 and earlier require only Python 3.5, but no windows builds were pushed.
  - 0.6 requires Python 3.6 due to EOL for Python 3.5 becoming prevalent in the latest pip.
  - 0.6.1 switched to manylinux2010 building; you might get better vectorization from a local copy.
- - 0.7 and forward will require Python 3.7 so we can use the standard @dataclass annotation and drop the attrs dependency.
+ - 0.7 maintains the requirement of Python 3.6
+ - 0.8 and forward will require Python 3.7 so we can use the standard @dataclass annotation and drop the attrs dependency.
 
 ## Python Usage 
 
