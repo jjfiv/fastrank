@@ -1,6 +1,7 @@
 import json
 from .fastrank import lib, ffi
 from typing import Dict, Set, List
+from wurlitzer import sys_pipes
 
 # Keep in sync with fastrank/src/model.rs : fastrank::model::ModelEnum
 _MODEL_TYPES = ["SingleFeature", "Linear", "DecisionTree", "Ensemble"]
@@ -98,10 +99,10 @@ class CQRel:
     def _query_json(self, message="queries"):
         self._require_init()
         response = json.loads(
-            _handle_rust_str(
-                lib.cqrel_query_json(self.pointer, message.encode("utf-8"))
+                _handle_rust_str(
+                    lib.cqrel_query_json(self.pointer, message.encode("utf-8"))
+                )
             )
-        )
         _maybe_raise_error_json(response)
         return response
 
@@ -156,7 +157,7 @@ class CModel:
         Returns a dense list of scores where the indexes should be aligned with your input.
         Substitutes ``missing`` (default=NaN) for any indices not in this dataset.
         """
-        output = []
+        output: List[float] = []
         dict_scores = self.predict_scores(dataset)
         for (index, score) in sorted(dict_scores.items()):
             while len(output) < index:
@@ -353,6 +354,7 @@ class CDataset:
         """
         self._require_init()
         train_req_str = json.dumps(train_req.to_dict()).encode("utf-8")
+        #with sys_pipes():
         train_resp = _handle_c_result(lib.train_model(train_req_str, self.pointer))
         return CModel(train_resp, train_req)
 

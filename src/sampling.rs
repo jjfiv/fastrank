@@ -37,26 +37,17 @@ impl DatasetRef {
 impl DatasetSampling for DatasetRef {
     fn random_sample(&self, frate: f64, srate: f64, rand: &mut Rand64) -> SampledDatasetRef {
         let mut features = self.features();
-        let mut queries = self.queries();
+        let mut instances = self.instances();
 
         // By sorting here, we're being defensive against the fact that features and queries were likely to have been collected into a set or hashset at some point. This will lead to non-deterministic ordering separate from the seed! When we sample from that, we end up getting different samples despite having the exact same RNG states!
-        queries.sort_unstable();
         features.sort_unstable();
+        instances.sort_unstable();
 
         let n_features = cmp::max(1, ((features.len() as f64) * frate) as usize);
-        let n_queries = cmp::max(1, ((queries.len() as f64) * srate) as usize);
+        let n_instances = cmp::max(1, ((instances.len() as f64) * srate) as usize);
 
-        let features = randutil::sample_without_replacement(&features, rand, n_features);
-        let queries_chosen = randutil::sample_without_replacement(&queries, rand, n_queries);
-        // Turn into a set so we can filter instances.
-        let queries: HashSet<&str> = queries_chosen.iter().map(|s| s.as_str()).collect();
-        let mut instances: Vec<InstanceId> = Vec::new();
-
-        for (qid, qinst) in self.instances_by_query() {
-            if queries.contains(qid.as_str()) {
-                instances.extend(qinst);
-            }
-        }
+        let features = randutil::sample_with_replacement(&features, rand, n_features);
+        let instances = randutil::sample_with_replacement(&instances, rand, n_instances);
 
         SampledDatasetRef {
             parent: self.clone(),

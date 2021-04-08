@@ -29,3 +29,4 @@ Cargo.lock
 *.tar.gz
 examples/msn30k*.gz
 fastrank/fastrank
+/trec

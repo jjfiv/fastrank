@@ -11,12 +11,15 @@ use ordered_float::NotNan;
 use rayon::prelude::*;
 use std::cmp;
 
+/// Unsafe: const-fn: create a zero that's not a NaN.
+const ZERO_F64: NotNan<f64> = unsafe { NotNan::unchecked_new(0.0) };
+
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 pub enum SplitSelectionStrategy {
-    SquaredError(),
-    BinaryGiniImpurity(),
-    InformationGain(), // entropy
-    TrueVarianceReduction(),
+    SquaredError,
+    BinaryGiniImpurity,
+    InformationGain, // entropy
+    TrueVarianceReduction,
 }
 
 pub fn label_stats(
@@ -29,9 +32,16 @@ pub fn label_stats(
     }
     label_stats.finish()
 }
+pub fn gain_stats(gains: &[NotNan<f32>]) -> Option<stats::ComputedStats> {
+    let mut label_stats = stats::StreamingStats::new();
+    for it in gains {
+        label_stats.push(it.into_inner() as f64);
+    }
+    label_stats.finish()
+}
 fn compute_output(ids: &[InstanceId], dataset: &dyn RankingDataset) -> NotNan<f64> {
     if ids.len() == 0 {
-        return NotNan::new(0.0).unwrap();
+        return ZERO_F64.clone();
     }
     let mut gain_sum = 0.0;
     for gain in ids.iter().cloned().map(|index| dataset.gain(index)) {
@@ -39,25 +49,35 @@ fn compute_output(ids: &[InstanceId], dataset: &dyn RankingDataset) -> NotNan<f6
     }
     NotNan::new(gain_sum / (ids.len() as f64)).expect("Leaf output NaN.")
 }
-fn squared_error(ids: &[InstanceId], dataset: &dyn RankingDataset) -> NotNan<f64> {
-    let output = compute_output(ids, dataset);
+fn average_gain(gains: &[NotNan<f32>]) -> NotNan<f64> {
+    if gains.len() == 0 {
+        return ZERO_F64;
+    }
+    let mut gain_sum = 0.0;
+    for gain in gains {
+        gain_sum += gain.into_inner() as f64;
+    }
+    NotNan::new(gain_sum / (gains.len() as f64)).expect("Leaf output NaN.")
+}
+fn squared_error(gains: &[NotNan<f32>]) -> NotNan<f64> {
+    let output = average_gain(gains);
 
     let mut sum_sq_errors = 0.0;
-    for gain in ids.iter().cloned().map(|index| dataset.gain(index)) {
+    for gain in gains {
         let diff = output - f64::from(gain.into_inner());
         sum_sq_errors += (diff * diff).into_inner();
     }
     NotNan::new(sum_sq_errors).unwrap()
 }
-fn gini_impurity(ids: &[InstanceId], dataset: &dyn RankingDataset) -> NotNan<f64> {
-    if ids.len() == 0 {
-        return NotNan::new(0.0).unwrap();
+fn gini_impurity(gains: &[NotNan<f32>]) -> NotNan<f64> {
+    if gains.len() == 0 {
+        return ZERO_F64;
     }
-    let count = ids.len() as f64;
-    let positive = ids
+    let count = gains.len() as f64;
+    let positive = gains
         .iter()
         .cloned()
-        .filter(|index| dataset.gain(*index).into_inner() > 0.0)
+        .filter(|it| it.into_inner() > 0.0)
         .count();
     let p_yes = (positive as f64) / count;
     let p_no = (count - (positive as f64)) / count;
@@ -66,20 +86,20 @@ fn gini_impurity(ids: &[InstanceId], dataset: &dyn RankingDataset) -> NotNan<f64
 }
 fn plogp(x: f64) -> NotNan<f64> {
     if x == 0.0 {
-        NotNan::new(0.0).unwrap()
+        ZERO_F64
     } else {
         NotNan::new(x * x.log2()).expect("entropy/plogp returned NaN")
     }
 }
-fn entropy(ids: &[InstanceId], dataset: &dyn RankingDataset) -> NotNan<f64> {
-    if ids.len() == 0 {
-        return NotNan::new(0.0).unwrap();
+fn entropy(gains: &[NotNan<f32>]) -> NotNan<f64> {
+    if gains.len() == 0 {
+        return ZERO_F64;
     }
-    let count = ids.len() as f64;
-    let positive = ids
+    let count = gains.len() as f64;
+    let positive = gains
         .iter()
         .cloned()
-        .filter(|index| dataset.gain(*index).into_inner() > 0.0)
+        .filter(|it| it.into_inner() > 0.0)
         .count();
     let p_yes = (positive as f64) / count;
     let p_no = (count - (positive as f64)) / count;
@@ -88,37 +108,30 @@ fn entropy(ids: &[InstanceId], dataset: &dyn RankingDataset) -> NotNan<f64> {
 }
 
 impl SplitSelectionStrategy {
-    fn importance(
-        &self,
-        lhs: &[InstanceId],
-        rhs: &[InstanceId],
-        dataset: &dyn RankingDataset,
-    ) -> NotNan<f64> {
+    fn importance(&self, lhs: &[NotNan<f32>], rhs: &[NotNan<f32>]) -> NotNan<f64> {
         match self {
-            SplitSelectionStrategy::SquaredError() => {
-                -(squared_error(lhs, dataset) + squared_error(rhs, dataset))
-            }
-            SplitSelectionStrategy::BinaryGiniImpurity() => {
+            SplitSelectionStrategy::SquaredError => -(squared_error(lhs) + squared_error(rhs)),
+            SplitSelectionStrategy::BinaryGiniImpurity => {
                 let lhs_w = lhs.len() as f64;
                 let rhs_w = rhs.len() as f64;
-                let lhs_gini = gini_impurity(lhs, dataset) * lhs_w;
-                let rhs_gini = gini_impurity(rhs, dataset) * rhs_w;
+                let lhs_gini = gini_impurity(lhs) * lhs_w;
+                let rhs_gini = gini_impurity(rhs) * rhs_w;
                 // Negative so that we minimize the impurity across the splits.
                 -(lhs_gini + rhs_gini)
             }
-            SplitSelectionStrategy::InformationGain() => {
+            SplitSelectionStrategy::InformationGain => {
                 let lhs_w = lhs.len() as f64;
                 let rhs_w = rhs.len() as f64;
-                let lhs_e = entropy(lhs, dataset) * lhs_w;
-                let rhs_e = entropy(rhs, dataset) * rhs_w;
+                let lhs_e = entropy(lhs) * lhs_w;
+                let rhs_e = entropy(rhs) * rhs_w;
                 // Negative so that we minimize the entropy across the splits.
                 -(lhs_e + rhs_e)
             }
-            SplitSelectionStrategy::TrueVarianceReduction() => {
+            SplitSelectionStrategy::TrueVarianceReduction => {
                 let lhs_w = lhs.len() as f64;
                 let rhs_w = rhs.len() as f64;
-                let lhs_variance = label_stats(lhs, dataset).unwrap().variance * lhs_w;
-                let rhs_variance = label_stats(rhs, dataset).unwrap().variance * rhs_w;
+                let lhs_variance = gain_stats(lhs).unwrap().variance * lhs_w;
+                let rhs_variance = gain_stats(rhs).unwrap().variance * rhs_w;
                 -NotNan::new(lhs_variance + rhs_variance).expect("variance NaN")
             }
         }
@@ -135,8 +148,9 @@ pub struct RandomForestParams {
     pub instance_sampling_rate: f64,
     pub feature_sampling_rate: f64,
     pub min_leaf_support: u32,
-    pub split_candidates: u32,
+    pub split_candidates: Option<u32>,
     pub max_depth: u32,
+    pub feature_tolerance: f64,
 }
 
 impl Default for RandomForestParams {
@@ -145,14 +159,15 @@ impl Default for RandomForestParams {
         Self {
             weight_trees: false,
             seed: rand.rand_u64(),
-            split_method: SplitSelectionStrategy::SquaredError(),
+            split_method: SplitSelectionStrategy::SquaredError,
             quiet: false,
             num_trees: 100,
             instance_sampling_rate: 0.5,
             feature_sampling_rate: 0.25,
             min_leaf_support: 10,
-            split_candidates: 3,
+            split_candidates: Some(3),
             max_depth: 8,
+            feature_tolerance: 1E-6,
         }
     }
 }
@@ -216,12 +231,10 @@ fn generate_split_candidate(
     stats: &stats::ComputedStats,
 ) -> Option<FeatureSplitCandidate> {
     let instances = dataset.instances();
-    let label_stats = label_stats(&instances, dataset)?;
-    if label_stats.max == label_stats.min {
+    // Is there any variance in this feature?
+    if stats.min() + params.feature_tolerance > stats.max() {
         return None;
     }
-    let k = params.split_candidates;
-    let range = stats.max - stats.min;
 
     let mut instance_feature: Vec<Scored<InstanceId>> = instances
         .iter()
@@ -232,49 +245,79 @@ fn generate_split_candidate(
 
     let scores: Vec<NotNan<f64>> = instance_feature.iter().map(|sf| sf.score).collect();
     let ids: Vec<InstanceId> = instance_feature.into_iter().map(|sf| sf.item).collect();
-
-    // TODO all splits instead...
-    let splits: Vec<NotNan<f64>> = (1..k)
-        .map(|i| (i as f64) / (k as f64))
-        .map(|f| NotNan::new(f * range + stats.min).unwrap())
-        .collect();
-
-    // collect instance index in ids/scores where the "splits" are.
-    let mut split_positions: Vec<Scored<usize>> = Vec::new();
-    let mut ids_i = 0;
-    for position in splits.iter() {
-        // linearly classify:
-        while ids_i < ids.len() && scores[ids_i] < *position {
-            ids_i += 1;
-        }
-        if let Some(prev) = split_positions.last() {
-            if prev.item == ids_i {
-                continue;
-            }
-        }
-        split_positions.push(Scored::new(position.into_inner(), ids_i));
+    let mut gains = Vec::with_capacity(instances.len());
+    for id in instances.iter() {
+        gains.push(dataset.gain(*id))
     }
+    let label_stats = gain_stats(&gains)?;
+    if label_stats.max == label_stats.min {
+        return None;
+    }
+
+    let split_positions: Vec<Scored<usize>> = if let Some(k) = params.split_candidates {
+        let range = stats.max - stats.min;
+        let splits: Vec<NotNan<f64>> = (1..k)
+            .map(|i| (i as f64) / (k as f64))
+            .map(|f| NotNan::new(f * range + stats.min).unwrap())
+            .collect();
+        // collect instance index in ids/scores where the "splits" are.
+        let mut split_positions: Vec<Scored<usize>> = Vec::new();
+        let mut ids_i = 0;
+        for position in splits.iter() {
+            // linearly classify:
+            while ids_i < ids.len() && scores[ids_i] < *position {
+                ids_i += 1;
+            }
+            if let Some(prev) = split_positions.last() {
+                if prev.item == ids_i {
+                    continue;
+                }
+            }
+            split_positions.push(Scored::new(position.into_inner(), ids_i));
+        }
+        split_positions
+    } else {
+        let mut split_positions: Vec<Scored<usize>> = Vec::with_capacity(scores.len() - 1);
+        for i in 1..scores.len() - 1 {
+            let rhs = scores[i + 1];
+            if let Some(last) = split_positions.last() {
+                if last.score + params.feature_tolerance > rhs {
+                    continue;
+                }
+            }
+            split_positions.push(Scored::new(rhs.into_inner(), i + 1));
+        }
+        split_positions
+    };
+
     // evaluate the splits!
-    let mut best = Vec::new();
+    let mut best: Option<SplitCandidate> = None;
     for scored_index in split_positions.into_iter() {
         let right_side = scored_index.item;
         let split = scored_index.score;
-        let (lhs, rhs) = ids.split_at(right_side);
-        if lhs.len() < params.min_leaf_support as usize
-            || rhs.len() < params.min_leaf_support as usize
+        if right_side < params.min_leaf_support as usize
+            || (gains.len() - right_side) < params.min_leaf_support as usize
         {
             continue;
         }
-        let importance = params.split_method.importance(lhs, rhs, dataset);
-        best.push(SplitCandidate {
-            pos: right_side,
-            split,
-            importance,
-        });
+        let (lhs, rhs) = gains.split_at(right_side);
+        let importance = params.split_method.importance(lhs, rhs);
+        if let Some(best) = best.as_mut() {
+            let must_beat = best.importance;
+            if importance > must_beat {
+                best.pos = right_side;
+                best.split = split;
+                best.importance = importance;
+            }
+        } else {
+            best = Some(SplitCandidate {
+                pos: right_side,
+                split,
+                importance,
+            })
+        }
     }
-
-    best.sort_unstable_by_key(|sc| sc.importance);
-    best.last().map(|sc| {
+    best.map(|sc| {
         let (lhs, rhs) = ids.split_at(sc.pos);
         FeatureSplitCandidate {
             fid,
@@ -444,8 +487,8 @@ mod test {
             min_leaf_support: 1,
             quiet: true,
             max_depth: 10,
-            split_candidates: 32,
-            split_method: SplitSelectionStrategy::SquaredError(),
+            split_candidates: Some(32),
+            split_method: SplitSelectionStrategy::SquaredError,
             ..RandomForestParams::default()
         };
 
@@ -463,7 +506,7 @@ mod test {
             }
         }
         // If this assertion fails and you're OK with it, you just broke SemVer; upgrade major version.
-        assert_float_eq("means[0] = predefined", means[0], 0.4367914517387043);
+        assert_float_eq("means[0] = predefined", means[0], 0.6007258815883293);
     }
 
     #[test]
@@ -488,8 +531,8 @@ mod test {
             num_trees: 1,
             min_leaf_support: 1,
             max_depth: 10,
-            split_candidates: 32,
-            split_method: SplitSelectionStrategy::SquaredError(),
+            split_candidates: Some(32),
+            split_method: SplitSelectionStrategy::SquaredError,
             ..RandomForestParams::default()
         };
         let tree = learn_decision_tree(&params, &dataset);

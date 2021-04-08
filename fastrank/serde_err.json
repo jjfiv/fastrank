@@ -1,0 +1,18 @@
+{
+    "measure": "ap",
+    "params": {
+        "RandomForest": {
+            "num_trees": 100,
+            "weight_trees": true,
+            "split_method": "SquaredError",
+            "instance_sampling_rate": 0.5,
+            "feature_sampling_rate": 0.25,
+            "min_leaf_support": 10,
+            "split_candidates": 3,
+            "max_depth": 8,
+            "seed": 1234567,
+            "quiet": false
+        }
+    },
+    "judgments": null
+}

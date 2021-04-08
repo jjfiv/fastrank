@@ -1,5 +1,5 @@
 import attr
-from typing import Union, Any, Dict
+from typing import Union, Any, Dict, Optional
 import random
 from .clib import CQRel, query_json
 
@@ -44,7 +44,8 @@ class RandomForestParams:
     instance_sampling_rate = attr.ib(type=float, default=0.5)
     feature_sampling_rate = attr.ib(type=float, default=0.25)
     min_leaf_support = attr.ib(type=int, default=10)
-    split_candidates = attr.ib(type=int, default=3)
+    feature_tolerance = attr.ib(type=float, default=1e-6)
+    split_candidates = attr.ib(type=Optional[int], default=3)
     max_depth = attr.ib(type=int, default=8)
     seed = attr.ib(type=int, default=random.randint(0, (1 << 64) - 1))
     quiet = attr.ib(type=bool, default=False)
