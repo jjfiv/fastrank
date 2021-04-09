@@ -75,7 +75,7 @@ class TestRustAPI(unittest.TestCase):
         cls.model = cls.rd.train_model(TestRustAPI.train_req)
 
     def test_version(self):
-        self.assertEqual(fastrank.__version__, '0.7.0')
+        assert fastrank.__version__ == '0.8.0'
 
     def test_cqrel_serialization(self):
         qrel = TestRustAPI.qrel.to_dict()

@@ -5,3 +5,10 @@ build-backend = "maturin"
 [tool.maturin]
 bindings = "cffi"
 manylinux = "off"
+
+[tool.pytest.ini_options]
+minversion = "6.0"
+addopts = "--import-mode=append"
+testpaths = [
+    "tests",
+]
