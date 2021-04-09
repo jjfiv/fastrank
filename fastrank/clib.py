@@ -1,6 +1,6 @@
 import json
 from .fastrank import lib, ffi
-from typing import Dict, Set, List
+from typing import Dict, Set, List, Any
 from wurlitzer import sys_pipes
 
 # Keep in sync with fastrank/src/model.rs : fastrank::model::ModelEnum
@@ -142,11 +142,12 @@ class CModel:
         # TODO: deeper checks
 
     @staticmethod
-    def from_dict(model_json: Dict) -> "CModel":
+    def from_dict(model_json: Dict[str, Any]) -> "CModel":
         """Create a model from a python representation.
 
         >>> model = CModel.from_dict(json.load("saved_model.json"))
         """
+        # TODO: recursively check for NaN and crash!
         CModel._check_model_json(model_json)
         json_str = json.dumps(model_json).encode("utf-8")
         return CModel(_handle_c_result(lib.model_from_json(json_str)))

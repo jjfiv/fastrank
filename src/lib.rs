@@ -26,6 +26,7 @@ pub mod sampling;
 
 pub mod json_api;
 
+mod cart;
 pub mod random_forest;
 /// Streaming computation of statistics.
 pub mod stats;

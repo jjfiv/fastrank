@@ -1,4 +1,7 @@
-use crate::io_helper;
+use crate::{
+    cart::{learn_cart_tree, CARTParams},
+    io_helper,
+};
 use std::error::Error;
 
 use crate::coordinate_ascent::CoordinateAscentParams;
@@ -31,6 +34,7 @@ impl Default for TrainRequest {
 pub enum FastRankModelParams {
     CoordinateAscent(CoordinateAscentParams),
     RandomForest(RandomForestParams),
+    RegressionTree(CARTParams),
 }
 
 pub fn do_training(
@@ -47,6 +51,9 @@ pub fn do_training(
         FastRankModelParams::RandomForest(params) => {
             ModelEnum::Ensemble(random_forest::learn_ensemble(&params, dataset, &evaluator))
         }
+        FastRankModelParams::RegressionTree(params) => {
+            ModelEnum::DecisionTree(learn_cart_tree(&params, dataset))
+        }
     })
 }
 
@@ -61,10 +68,7 @@ pub fn predict_scores(
         for index in docs.iter().cloned() {
             let score = dataset.score(index, model);
             // TODO make this an error?
-            scores.insert(
-                index.to_index(),
-                score.into_inner(),
-            );
+            scores.insert(index.to_index(), score.into_inner());
         }
     }
 

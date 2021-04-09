@@ -11,6 +11,9 @@ pub trait DatasetSampling {
     /// At least one feature and one instance is selected no matter how small the percentage.
     fn random_sample(&self, frate: f64, srate: f64, rand: &mut Rand64) -> SampledDatasetRef;
 
+    /// This represents a deterministic sampling of instances and features.
+    fn select(&self, instances: &[InstanceId], features: &[FeatureId]) -> SampledDatasetRef;
+
     /// This represents a deterministic sampling of instances.
     fn with_instances(&self, instances: &[InstanceId]) -> SampledDatasetRef;
 
@@ -55,6 +58,16 @@ impl DatasetSampling for DatasetRef {
             instances,
         }
     }
+    /// Sample both instances and features.
+    fn select(&self, instances: &[InstanceId], features: &[FeatureId]) -> SampledDatasetRef {
+        SampledDatasetRef {
+            parent: self.get_ref_or_clone(),
+            instances: instances.to_vec(),
+            features: features.to_vec(),
+        }
+    }
+
+    /// Sample just instances.
     fn with_instances(&self, instances: &[InstanceId]) -> SampledDatasetRef {
         SampledDatasetRef {
             parent: self.get_ref_or_clone(),

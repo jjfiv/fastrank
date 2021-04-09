@@ -1,5 +1,6 @@
 use crate::instance::FeatureRead;
 use crate::{FeatureId, Scored};
+use std::cmp;
 
 use ordered_float::NotNan;
 
@@ -46,7 +47,20 @@ pub struct DenseLinearRankingModel {
 
 impl Model for DenseLinearRankingModel {
     fn score(&self, features: &dyn FeatureRead) -> NotNan<f64> {
-        NotNan::new(features.dotp(&self.weights)).expect("Model.predict -> NaN")
+        if let Ok(output) = NotNan::new(features.dotp(&self.weights)) {
+            return output;
+        } else {
+            println!("weights: {:?}", self.weights);
+            for (i, w) in self.weights.iter().enumerate() {
+                println!(
+                    "features[{}]: {:?} * {}",
+                    i,
+                    features.get(FeatureId::from_index(i)),
+                    w
+                )
+            }
+            panic!("NaN prediction.");
+        }
     }
 }
 
@@ -59,6 +73,15 @@ pub enum TreeNode {
         rhs: Box<TreeNode>,
     },
     LeafNode(NotNan<f64>),
+}
+
+impl TreeNode {
+    pub fn depth(&self) -> u32 {
+        match self {
+            TreeNode::LeafNode(_) => 1,
+            TreeNode::FeatureSplit { lhs, rhs, .. } => 1 + cmp::max(lhs.depth(), rhs.depth()),
+        }
+    }
 }
 
 impl Model for TreeNode {
