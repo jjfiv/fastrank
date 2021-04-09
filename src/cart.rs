@@ -424,6 +424,7 @@ mod test {
             min_leaf_support: 1,
             max_depth: 10,
             split_candidates: Some(32),
+            only_use_features_once: false,
             split_method: SplitSelectionStrategy::SquaredError,
             ..CARTParams::default()
         };
