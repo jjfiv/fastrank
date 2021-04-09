@@ -68,9 +68,9 @@ pub fn learn_ensemble(
 
     let mut trees: Vec<Scored<TreeNode>> = Vec::new();
     if !params.quiet {
-        println!("-----------------------");
+        println!("-------------------------");
         println!("|{:>7}|{:>7}|{:>7}|", "Tree", "Depth", evaluator.name());
-        println!("-----------------------");
+        println!("-------------------------");
     }
 
     trees.par_extend(seeds.par_iter().map(|(idx, rand_seed)| {
@@ -93,7 +93,7 @@ pub fn learn_ensemble(
     }));
 
     if !params.quiet {
-        println!("-----------------------");
+        println!("-------------------------");
     }
 
     WeightedEnsemble::new(
