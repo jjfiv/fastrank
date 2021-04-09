@@ -31,13 +31,12 @@ jobs:
         run: |
           pip install --upgrade pip
           pip install -r requirements.txt
-          pip install maturin
+          pip install maturin pytest
           # maturin develop won't work outside venv
           maturin build
           pip install target/wheels/fastrank-*.whl
-      - name: unittest
-        run: |
-          python -I -m unittest discover -s tests -v
+      - name: pytest
+        run: pytest
   build-mac-win:
     needs: check
     strategy:
