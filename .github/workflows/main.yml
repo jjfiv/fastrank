@@ -31,9 +31,10 @@ jobs:
         run: |
           pip install --upgrade pip
           pip install -r requirements.txt
-          pip install maturin pytest
+          pip install maturin
+          pip install pytest
           # maturin develop won't work outside venv
-          maturin build
+          maturin build --release
           pip install target/wheels/fastrank-*.whl
       - name: pytest
         run: python -I -m unittest discover -s -v # -I isolates from local source, forcing use of wheel
