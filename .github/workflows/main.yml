@@ -23,7 +23,7 @@ jobs:
       - name: Setup Python environment
         uses: actions/setup-python@v2.1.4
         with:
-          python-version: 3.8
+          python-version: 3.6
       - name: cargo test
         run: |
           cargo test
@@ -36,7 +36,7 @@ jobs:
           maturin build
           pip install target/wheels/fastrank-*.whl
       - name: pytest
-        run: python -I -m pytest # -I isolates from local source, forcing use of wheel
+        run: python -I -m unittest discover -s -v # -I isolates from local source, forcing use of wheel
   build-mac-win:
     needs: check
     strategy:
