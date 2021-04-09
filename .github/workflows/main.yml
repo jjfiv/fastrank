@@ -36,7 +36,7 @@ jobs:
           maturin build
           pip install target/wheels/fastrank-*.whl
       - name: pytest
-        run: pytest
+        run: python -I -m pytest # -I isolates from local source, forcing use of wheel
   build-mac-win:
     needs: check
     strategy:
