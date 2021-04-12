@@ -79,6 +79,11 @@ pub extern "C" fn free_str(originally_from_rust: *mut c_void) {
     let _will_drop: CString = unsafe { CString::from_raw(originally_from_rust as *mut c_char) };
 }
 
+#[no_mangle]
+pub extern "C" fn free_f64(originally_from_rust: *mut c_void) {
+    let _will_drop: Box<f64> = unsafe { Box::from_raw(originally_from_rust as *mut f64) };
+}
+
 /// Note: not-recursive. Free Error Message Manually!
 #[no_mangle]
 pub extern "C" fn free_c_result(originally_from_rust: *mut CResult) {
@@ -207,6 +212,29 @@ pub extern "C" fn make_dense_dataset_f32_f64_i64(
             reference: dd.into_ref(),
         }),
     )
+}
+
+#[no_mangle]
+pub extern "C" fn evaluate_query(
+    measure: *const c_void,
+    n: usize,
+    gains: *const f32,
+    scores: *const f64,
+    depth: i64,
+    opts: *const c_void,
+) -> *const CResult {
+    result_to_c((|| {
+        let measure = accept_str("measure", measure)?;
+        let gains = unsafe { slice::from_raw_parts(gains, n) };
+        let scores = unsafe { slice::from_raw_parts(scores, n) };
+        let depth = if depth <= 0 {
+            None
+        } else {
+            Some(depth as usize)
+        };
+        let opts = serde_json::from_str(accept_str("options_json", opts)?)?;
+        json_api::evaluate_query(measure, gains, scores, depth, &opts)
+    })())
 }
 
 #[no_mangle]

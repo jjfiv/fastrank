@@ -27,7 +27,7 @@ ordered-float = { version = "2.0", features = ["serde"] }
 fast-float = "0.2"
 
 [package.metadata.maturin]
-requires-dist = ["attrs", "cffi", "numpy", "wurlitzer"]
+requires-dist = ["attrs", "cffi", "numpy"]
 classifier = [
   "Programming Language :: Python :: 3.6",
   "License :: OSI Approved :: MIT License",

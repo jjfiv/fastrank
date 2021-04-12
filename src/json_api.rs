@@ -1,7 +1,8 @@
 use crate::{
     cart::{learn_cart_tree, CARTParams},
-    io_helper,
+    io_helper, InstanceId,
 };
+use ordered_float::NotNan;
 use std::error::Error;
 
 use crate::coordinate_ascent::CoordinateAscentParams;
@@ -121,4 +122,55 @@ pub fn predict_to_trecrun(
         output.flush()?;
     }
     Ok(records_written)
+}
+
+pub fn evaluate_query(
+    measure: &str,
+    gains: &[f32],
+    scores: &[f64],
+    depth: Option<usize>,
+    opts: &serde_json::Value,
+) -> Result<f64, Box<dyn Error>> {
+    assert_eq!(gains.len(), scores.len());
+    let mut ranked = Vec::with_capacity(gains.len());
+    for (i, (gain, score)) in gains.iter().zip(scores.iter()).enumerate() {
+        let id = InstanceId::from_index(i);
+        ranked.push(RankedInstance {
+            score: NotNan::new(*score)?,
+            gain: NotNan::new(*gain)?,
+            identifier: id,
+        });
+    }
+    // Sort ranked-list:
+    ranked.sort_unstable();
+
+    use crate::evaluators::*;
+    Ok(match measure.to_lowercase().as_ref() {
+        "ap" | "map" => {
+            let num_rel = opts
+                .get("num_rel")
+                .map(|v| v.as_u64())
+                .flatten()
+                .map(|v| v as u32)
+                .unwrap_or_else(|| compute_num_relevant(&ranked));
+            compute_ap(&ranked, num_rel as u32)
+        }
+        "dcg" => {
+            let gains: Vec<NotNan<f32>> = ranked.iter().map(|r| r.gain.clone()).collect();
+            let compute_ideal = opts
+                .get("ideal")
+                .map(|v| v.as_bool())
+                .flatten()
+                .unwrap_or(false);
+            compute_dcg(&gains, depth, compute_ideal)
+        }
+        "mrr" | "rr" | "recip_rank" => compute_recip_rank(&ranked),
+        "ndcg" => {
+            let gains: Vec<NotNan<f32>> = ranked.iter().map(|r| r.gain.clone()).collect();
+            let ideal = compute_dcg(&gains, depth, true);
+            let dcg = compute_dcg(&gains, depth, false);
+            dcg / ideal
+        }
+        other => Err(format!("No Such Evaluator: {}", other))?,
+    })
 }

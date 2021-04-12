@@ -1,7 +1,7 @@
 import json
 from .fastrank import lib, ffi
-from typing import Dict, Set, List, Any
-from wurlitzer import sys_pipes
+from typing import Dict, Set, List, Any, Optional, Union
+import numpy as np
 
 # Keep in sync with fastrank/src/model.rs : fastrank::model::ModelEnum
 _MODEL_TYPES = ["SingleFeature", "Linear", "DecisionTree", "Ensemble"]
@@ -504,3 +504,28 @@ def query_json(message: str):
     response = json.loads(_handle_rust_str(lib.query_json(command)))
     _maybe_raise_error_json(response)
     return response
+
+def evaluate_query(measure: str, gains: Union[List[int], List[float]], scores: List[float], depth: Optional[int]=None, opts: Dict[str, Any] = {}) -> float:
+    n = len(gains)
+    assert(len(scores) == n)
+    encoded_depth = -1
+    if depth is not None:
+        assert depth > 0
+        encoded_depth = depth
+    gains_arr = np.array(gains, dtype='float32')
+    scores_arr = np.array(scores, dtype='float64')
+    print(gains_arr, scores_arr)
+    measure_c = measure.encode('utf-8')
+    opts_c = json.dumps(opts).encode('utf-8')
+    float_ptr = ffi.cast('double*', 
+        _handle_c_result(lib.evaluate_query(
+                measure_c, 
+                n, 
+                ffi.cast("float*", gains_arr.ctypes.data), 
+                ffi.cast("double*", scores_arr.ctypes.data), 
+                encoded_depth, 
+                opts_c)))
+    number = float_ptr[0]
+    print(number)
+    lib.free_f64(float_ptr)
+    return number

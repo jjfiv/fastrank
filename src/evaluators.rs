@@ -48,37 +48,6 @@ impl Ord for RankedInstance {
     }
 }
 
-#[cfg(test)]
-mod test {
-    use super::*;
-    fn ri(score: f64, gain: f32, id: usize) -> RankedInstance {
-        RankedInstance::new(
-            NotNan::new(score).unwrap(),
-            NotNan::new(gain).unwrap(),
-            InstanceId::from_index(id),
-        )
-    }
-    #[test]
-    fn test_rank_ties() {
-        let mut instances = vec![
-            ri(2.0, 0.0, 4),
-            ri(2.0, 1.0, 3),
-            ri(2.0, 2.0, 1),
-            ri(2.0, 2.0, 2),
-            ri(1.0, 2.0, 5),
-        ];
-        // getting: 5,4,3,1,2
-        instances.sort();
-        assert_eq!(
-            vec![4, 3, 1, 2, 5],
-            instances
-                .into_iter()
-                .map(|ri| ri.identifier.to_index())
-                .collect::<Vec<_>>()
-        );
-    }
-}
-
 impl RankedInstance {
     pub fn new(score: NotNan<f64>, gain: NotNan<f32>, identifier: InstanceId) -> Self {
         Self {
@@ -237,23 +206,11 @@ impl Evaluator for ReciprocalRank {
         String::from("RR")
     }
     fn score(&self, _qid: &str, ranked_list: &[RankedInstance]) -> f64 {
-        // Compute RR:
-        let mut recip_rank = 0.0;
-        if let Some(rel_rank) = ranked_list
-            .iter()
-            .map(|ri| ri.is_relevant())
-            .enumerate()
-            .filter(|(_, rel)| *rel)
-            .nth(0)
-            .map(|(i, _)| i + 1)
-        {
-            recip_rank = 1.0 / (rel_rank as f64)
-        }
-        return recip_rank;
+        compute_recip_rank(ranked_list)
     }
 }
 
-fn compute_dcg(gains: &[NotNan<f32>], depth: Option<usize>, ideal: bool) -> f64 {
+pub fn compute_dcg(gains: &[NotNan<f32>], depth: Option<usize>, ideal: bool) -> f64 {
     // Gain of 0.0 is a positive value, so we need to expand or contact to "depth" if it's given.
     let mut gain_vector: Vec<NotNan<f32>> = gains.to_vec();
     if ideal {
@@ -270,30 +227,6 @@ fn compute_dcg(gains: &[NotNan<f32>], depth: Option<usize>, ideal: bool) -> f64 
         dcg += ((2.0 as f64).powf(gain) - 1.0) / (i + 2.0).log2();
     }
     dcg
-}
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    const TREC_TOLERANCE: f64 = 0.00005;
-
-    fn assert_trec_eq(x: f64, y: f64) {
-        if (x - y).abs() > TREC_TOLERANCE {
-            panic!("{} != {} at tolerance={}", x, y, TREC_TOLERANCE);
-        }
-    }
-
-    #[test]
-    fn test_compute_ndcg() {
-        let data: Vec<NotNan<f32>> = [0.0, 1.0, 1.0, 1.0, 0.0, 0.0]
-            .iter()
-            .map(|v| NotNan::new(*v).unwrap())
-            .collect();
-        let ideal = compute_dcg(&data, None, true);
-        let actual = compute_dcg(&data, None, false);
-
-        assert_trec_eq(0.7328, actual / ideal);
-    }
 }
 
 #[derive(Clone)]
@@ -425,25 +358,112 @@ impl Evaluator for AveragePrecision {
             .query_norms
             .get(qid)
             .cloned()
-            .unwrap_or_else(|| ranked_list.iter().filter(|ri| ri.is_relevant()).count() as u32);
+            .unwrap_or_else(|| compute_num_relevant(ranked_list));
 
-        if num_relevant == 0 {
-            return 0.0;
+        compute_ap(ranked_list, num_relevant)
+    }
+}
+
+pub fn compute_num_relevant(ranked_list: &[RankedInstance]) -> u32 {
+    ranked_list.iter().filter(|ri| ri.is_relevant()).count() as u32
+}
+
+pub fn compute_ap(ranked_list: &[RankedInstance], num_relevant: u32) -> f64 {
+    if num_relevant == 0 {
+        return 0.0;
+    }
+    // Compute AP:
+    let mut recall_points = 0;
+    let mut sum_precision = 0.0;
+    for rank in ranked_list
+        .iter()
+        .map(|ri| ri.is_relevant())
+        .enumerate()
+        .filter(|(_, rel)| *rel)
+        .map(|(i, _)| i + 1)
+    {
+        recall_points += 1;
+        sum_precision += f64::from(recall_points) / (rank as f64);
+    }
+    sum_precision / (num_relevant as f64)
+}
+
+pub fn compute_recip_rank(ranked_list: &[RankedInstance]) -> f64 {
+    if let Some(rel_rank) = ranked_list
+        .iter()
+        .map(|ri| ri.is_relevant())
+        .enumerate()
+        .filter(|(_, rel)| *rel)
+        .nth(0)
+        .map(|(i, _)| i + 1)
+    {
+        return 1.0 / (rel_rank as f64);
+    }
+    0.0
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    fn ri(score: f64, gain: f32, id: usize) -> RankedInstance {
+        RankedInstance::new(
+            NotNan::new(score).unwrap(),
+            NotNan::new(gain).unwrap(),
+            InstanceId::from_index(id),
+        )
+    }
+    #[test]
+    fn test_rank_ties() {
+        let mut instances = vec![
+            ri(2.0, 0.0, 4),
+            ri(2.0, 1.0, 3),
+            ri(2.0, 2.0, 1),
+            ri(2.0, 2.0, 2),
+            ri(1.0, 2.0, 5),
+        ];
+        // getting: 5,4,3,1,2
+        instances.sort();
+        assert_eq!(
+            vec![4, 3, 1, 2, 5],
+            instances
+                .into_iter()
+                .map(|ri| ri.identifier.to_index())
+                .collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn test_ap() {
+        let instances = vec![
+            ri(0.9, 1.0, 1),
+            ri(0.7, 0.0, 2),
+            ri(0.5, 0.0, 3),
+            ri(0.4, 1.0, 4),
+        ];
+        let num_rel = compute_num_relevant(&instances);
+        assert_eq!(num_rel, 2);
+        let ap = compute_ap(&instances, num_rel);
+        // mean(1, 1/2)
+        assert_eq!(ap, 0.75);
+    }
+
+    const TREC_TOLERANCE: f64 = 0.00005;
+
+    fn assert_trec_eq(x: f64, y: f64) {
+        if (x - y).abs() > TREC_TOLERANCE {
+            panic!("{} != {} at tolerance={}", x, y, TREC_TOLERANCE);
         }
+    }
 
-        // Compute AP:
-        let mut recall_points = 0;
-        let mut sum_precision = 0.0;
-        for rank in ranked_list
+    #[test]
+    fn test_compute_ndcg() {
+        let data: Vec<NotNan<f32>> = [0.0, 1.0, 1.0, 1.0, 0.0, 0.0]
             .iter()
-            .map(|ri| ri.is_relevant())
-            .enumerate()
-            .filter(|(_, rel)| *rel)
-            .map(|(i, _)| i + 1)
-        {
-            recall_points += 1;
-            sum_precision += f64::from(recall_points) / (rank as f64);
-        }
-        sum_precision / (num_relevant as f64)
+            .map(|v| NotNan::new(*v).unwrap())
+            .collect();
+        let ideal = compute_dcg(&data, None, true);
+        let actual = compute_dcg(&data, None, false);
+
+        assert_trec_eq(0.7328, actual / ideal);
     }
 }
