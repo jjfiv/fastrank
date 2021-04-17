@@ -4,18 +4,86 @@ use crate::model::Model;
 use crate::{FeatureId, InstanceId};
 use ordered_float::NotNan;
 use std::collections::HashMap;
-use std::convert::TryFrom;
 use std::error::Error;
 use std::sync::Arc;
+
+#[derive(Debug, Clone)]
+pub enum TypedArrayRef {
+    DenseI32(&'static [i32]),
+    DenseI64(&'static [i64]),
+    DenseF32(&'static [f32]),
+    DenseF64(&'static [f64]),
+}
+
+impl TypedArrayRef {
+    pub fn len(&self) -> usize {
+        match self {
+            TypedArrayRef::DenseI32(arr) => arr.len(),
+            TypedArrayRef::DenseI64(arr) => arr.len(),
+            TypedArrayRef::DenseF32(arr) => arr.len(),
+            TypedArrayRef::DenseF64(arr) => arr.len(),
+        }
+    }
+    pub fn get_i32(&self, index: usize) -> Option<i32> {
+        match self {
+            TypedArrayRef::DenseI32(arr) => arr.get(index).cloned(),
+            TypedArrayRef::DenseI64(_) => None,
+            TypedArrayRef::DenseF32(_) => None,
+            TypedArrayRef::DenseF64(_) => None,
+        }
+    }
+    pub fn get_i64(&self, index: usize) -> Option<i64> {
+        match self {
+            TypedArrayRef::DenseI32(arr) => arr.get(index).cloned().map(|x| x as i64),
+            TypedArrayRef::DenseI64(arr) => arr.get(index).cloned(),
+            TypedArrayRef::DenseF32(_) => None,
+            TypedArrayRef::DenseF64(_) => None,
+        }
+    }
+    pub fn get_f32(&self, index: usize) -> Option<f32> {
+        match self {
+            TypedArrayRef::DenseI32(arr) => arr.get(index).cloned().map(|x| x as f32),
+            TypedArrayRef::DenseI64(arr) => arr.get(index).cloned().map(|x| x as f32),
+            TypedArrayRef::DenseF32(arr) => arr.get(index).cloned(),
+            TypedArrayRef::DenseF64(arr) => arr.get(index).cloned().map(|x| x as f32),
+        }
+    }
+    pub fn get_f64(&self, index: usize) -> Option<f64> {
+        match self {
+            TypedArrayRef::DenseI32(arr) => arr.get(index).cloned().map(|x| x as f64),
+            TypedArrayRef::DenseI64(arr) => arr.get(index).cloned().map(|x| x as f64),
+            TypedArrayRef::DenseF32(arr) => arr.get(index).cloned().map(|x| x as f64),
+            TypedArrayRef::DenseF64(arr) => arr.get(index).cloned(),
+        }
+    }
+    pub fn dot(&self, weights: &[f64], start: usize) -> f64 {
+        let mut sum = 0.0;
+        match self {
+            TypedArrayRef::DenseI32(_) => todo! {},
+            TypedArrayRef::DenseI64(_) => todo! {},
+            TypedArrayRef::DenseF32(arr) => {
+                for (w, x) in arr[start..].iter().cloned().zip(weights.iter().cloned()) {
+                    sum += (w as f64) * x;
+                }
+            }
+            TypedArrayRef::DenseF64(arr) => {
+                for (w, x) in arr[start..].iter().zip(weights) {
+                    sum += w * x;
+                }
+            }
+        }
+        sum
+    }
+}
 
 #[derive(Debug, Clone)]
 pub struct DenseDataset {
     n_features: usize,
     n_instances: usize,
-    xs: &'static [f32],
-    ys: &'static [f64],
-    qid_strings: HashMap<u32, String>,
-    qids: Vec<u32>,
+    xs: TypedArrayRef,
+    ys: TypedArrayRef,
+    qid_strings: HashMap<i64, String>,
+    qids: TypedArrayRef,
     feature_names: HashMap<FeatureId, String>,
 }
 
@@ -36,19 +104,16 @@ impl DenseDataset {
         let mut qid_strings = HashMap::new();
 
         for qid in qids.iter().cloned() {
-            let qid_no = u32::try_from(qid)?;
-            qid_strings
-                .entry(qid_no)
-                .or_insert_with(|| format!("{}", qid_no));
-            qid_nos.push(qid_no);
+            qid_strings.entry(qid).or_insert_with(|| format!("{}", qid));
+            qid_nos.push(qid);
         }
 
         Ok(DenseDataset {
             n_instances,
             n_features,
-            xs,
-            ys,
-            qids: qid_nos,
+            xs: TypedArrayRef::DenseF32(xs),
+            ys: TypedArrayRef::DenseF64(ys),
+            qids: TypedArrayRef::DenseI64(qids),
             qid_strings,
             feature_names: HashMap::new(),
         })
@@ -66,13 +131,7 @@ impl FeatureRead for DenseDatasetInstance<'_> {
     }
     fn dotp(&self, weights: &[f64]) -> f64 {
         let start = self.id.to_index() * self.dataset.n_features;
-        let end = start + self.dataset.n_features;
-        let row = &self.dataset.xs[start..end];
-        let mut out = 0.0;
-        for (feature, weight) in row.iter().cloned().zip(weights.iter().cloned()) {
-            out += f64::from(feature) * weight;
-        }
-        out
+        self.dataset.xs.dot(weights, start)
     }
 }
 
@@ -99,8 +158,9 @@ impl RankingDataset for DenseDataset {
     }
     fn instances_by_query(&self) -> HashMap<String, Vec<InstanceId>> {
         let mut ref_map = HashMap::<&str, Vec<InstanceId>>::new();
-        for (i, qid_no) in self.qids.iter().enumerate() {
-            let qid_str = &self.qid_strings[qid_no];
+        for i in 0..self.qids.len() {
+            let qid_no = self.qids.get_i64(i).unwrap();
+            let qid_str = &self.qid_strings[&qid_no];
             ref_map
                 .entry(qid_str.as_str())
                 .or_default()
@@ -119,14 +179,14 @@ impl RankingDataset for DenseDataset {
         let index = id.to_index();
         let y = self
             .ys
-            .get(index)
+            .get_f32(index)
             .expect("only valid TrainingInstances should exist");
-        NotNan::new(*y as f32)
+        NotNan::new(y)
             .map_err(|_| format!("NaN in ys[{}]", index))
             .unwrap()
     }
     fn query_id(&self, id: InstanceId) -> &str {
-        let qid_no = self.qids[id.to_index()];
+        let qid_no = self.qids.get_i64(id.to_index()).unwrap();
         self.qid_strings[&qid_no].as_str()
     }
     fn document_name(&self, _id: InstanceId) -> Option<&str> {
@@ -146,8 +206,7 @@ impl RankingDataset for DenseDataset {
     /// Lookup a feature value for a particular instance.
     fn get_feature_value(&self, instance: InstanceId, fid: FeatureId) -> Option<f64> {
         let index = self.n_features * instance.to_index() + fid.to_index();
-        let val = self.xs.get(index).expect("Indexes should be valid!");
-        Some(f64::from(*val))
+        self.xs.get_f64(index)
     }
     // Given a name or number as a string, lookup the feature id:
     fn try_lookup_feature(&self, name_or_num: &str) -> Result<FeatureId, Box<dyn Error>> {
