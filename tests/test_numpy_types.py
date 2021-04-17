@@ -2,6 +2,7 @@ from sklearn.datasets import load_svmlight_file
 from fastrank import CDataset
 import numpy as np
 from typing import List
+from fastrank.models import CoordinateAscentRanker, CoordinateAscentParams
 
 (train_X, y, qid) = load_svmlight_file(
     "examples/trec_news_2018.train",
@@ -10,12 +11,26 @@ from typing import List
 )
 
 
+def cheap_linear() -> CoordinateAscentRanker:
+    return CoordinateAscentRanker(
+        params=CoordinateAscentParams(
+            seed=1234,
+            num_restarts=1,
+            quiet=True,
+        )  # type:ignore
+    )
+
+
 def test_default_dtypes():
     X = train_X.todense()
     assert X[100, 3] == train_X[100, 3]
     dataset = CDataset.from_numpy(X, y, qid)
     assert dataset.num_instances() == 782
     assert dataset.num_features() == 5
+    m = cheap_linear()
+    m.fit_dataset(dataset)
+    print(m.weights())
+    assert (m.score_dataset(dataset)) >= 0.726
 
 
 def test_smaller_dtypes():
@@ -27,6 +42,10 @@ def test_smaller_dtypes():
     assert dataset.num_instances() == 782
     assert dataset.num_features() == 5
 
+    m = cheap_linear()
+    m.fit_dataset(dataset)
+    assert (m.score_dataset(dataset)) >= 0.726
+
 
 def test_int_ys():
     dataset = CDataset.from_numpy(
@@ -34,6 +53,10 @@ def test_int_ys():
     )
     assert dataset.num_instances() == 782
     assert dataset.num_features() == 5
+
+    m = cheap_linear()
+    m.fit_dataset(dataset)
+    assert (m.score_dataset(dataset)) >= 0.726
 
 
 def test_qstrings():
@@ -43,3 +66,7 @@ def test_qstrings():
     assert dataset.num_instances() == 782
     assert dataset.num_features() == 5
     assert dataset.queries() == set(qids)
+
+    m = cheap_linear()
+    m.fit_dataset(dataset)
+    assert (m.score_dataset(dataset)) >= 0.726
