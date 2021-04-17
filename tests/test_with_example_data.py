@@ -272,11 +272,8 @@ def test_trecrun():
         assert "Dataset does not contain document ids" in str(context.value)
 
 
-def TRAIN_REQ_object():
-    rust = TrainRequest.from_dict(query_json("coordinate_ascent_defaults"))
-    py = TrainRequest()
-
-    for _ in range(2):
+def train_request_object():
+    def assert_eq(rust, py):
         assert rust.measure == py.measure
         assert rust.judgments == py.judgments
         assert isinstance(rust.params, CoordinateAscentParams)
@@ -290,5 +287,9 @@ def TRAIN_REQ_object():
         assert rust.params.output_ensemble == py.params.output_ensemble
         assert rust.params.quiet == py.params.quiet
 
-        # no serialization issues!
-        py = TrainRequest.from_dict(py.to_dict())
+    rust = TrainRequest.from_dict(query_json("coordinate_ascent_defaults"))
+    py = TrainRequest()
+
+    assert_eq(rust, py)
+    # no serialization issues!
+    assert_eq(rust, TrainRequest.from_dict(py.to_dict()))
