@@ -58,7 +58,7 @@ impl RankingDataset for DatasetRef {
         Some(self.data.get_ref().unwrap_or(self.clone()))
     }
     fn is_sampled(&self) -> bool {
-        return self.data.is_sampled()
+        return self.data.is_sampled();
     }
     fn features(&self) -> Vec<FeatureId> {
         self.data.features()
@@ -118,7 +118,7 @@ impl RankingDataset for SampledDatasetRef {
         self.parent.get_ref()
     }
     fn is_sampled(&self) -> bool {
-        return true
+        return true;
     }
     fn features(&self) -> Vec<FeatureId> {
         self.features.clone()

@@ -99,10 +99,10 @@ class CQRel:
     def _query_json(self, message="queries"):
         self._require_init()
         response = json.loads(
-                _handle_rust_str(
-                    lib.cqrel_query_json(self.pointer, message.encode("utf-8"))
-                )
+            _handle_rust_str(
+                lib.cqrel_query_json(self.pointer, message.encode("utf-8"))
             )
+        )
         _maybe_raise_error_json(response)
         return response
 
@@ -152,7 +152,9 @@ class CModel:
         json_str = json.dumps(model_json).encode("utf-8")
         return CModel(_handle_c_result(lib.model_from_json(json_str)))
 
-    def predict_dense_scores(self, dataset: 'CDataset', missing: float = float('nan')) -> List[float]:
+    def predict_dense_scores(
+        self, dataset: "CDataset", missing: float = float("nan")
+    ) -> List[float]:
         """
         Use the model to predict scores for each element of the given dataset.
         Returns a dense list of scores where the indexes should be aligned with your input.
@@ -169,15 +171,16 @@ class CModel:
                 output[index] = score
         return output
 
-
-    def predict_scores(self, dataset: 'CDataset') -> Dict[int, float]:
+    def predict_scores(self, dataset: "CDataset") -> Dict[int, float]:
         """
         Use the model to predict scores for each element of the given dataset.
         Returns a dictionary of instance-index to score.
         """
-        response = json.loads(_handle_rust_str(lib.predict_scores(self.pointer, dataset.pointer)))
+        response = json.loads(
+            _handle_rust_str(lib.predict_scores(self.pointer, dataset.pointer))
+        )
         _maybe_raise_error_json(response)
-        return dict((int(k), v) for k,v in response.items())
+        return dict((int(k), v) for k, v in response.items())
 
     def __del__(self):
         if self.pointer is not None:
@@ -254,16 +257,18 @@ class CDataset:
         )
 
     @staticmethod
-    def from_numpy(X, y, qid) -> "CDataset":
+    def from_numpy(
+        X: np.ndarray, y: np.ndarray, qids: Union[List[str], np.ndarray]
+    ) -> "CDataset":
         """
         Construct a dataset from in-memory numpy arrays. This class will hold on to them so that Rust points at them. If you delete them, bad things will happen.
 
-        :param X: The feature matrix, a (NxD) float32 matrix; N instances, D features. Must be dense for now.
+        :param X: The feature matrix, a (NxD) float3matrix; N instances, D features. Must be dense for now.
         :type X: numpy.array
-        :param y: The judgment vector, a 1xN or Nx1 float64 matrix.
+        :param y: The judgment vector, a 1xN or Nx1 float/int matrix.
         :type y: numpy.array
-        :param qid: The numeric representations of query ids (not possible for all datasets, I know.) 1xN or Nx1 int64 matrix.
-        :type qid: numpy.array
+        :param qids: The numeric or string representations of query ids 1xN or Nx1 int/string matrix.
+        :type qids: List[str] OR numpy.array
 
         We can then construct our own numpy arrays, or use the sklearn loader:
 
@@ -276,22 +281,52 @@ class CDataset:
         assert N > 0
         assert D > 0
         assert len(y) == N
-        assert len(qid) == N
+        assert len(qids) == N
+        float_dtypes = ["float32", "float64"]
+        int_dtypes = ["int32", "int64"]
         # TODO: be more flexible here!
-        assert X.dtype == "float32"
-        assert y.dtype == "float64"
-        assert qid.dtype == "int64"
+        assert X.dtype in float_dtypes
+        assert (y.dtype in float_dtypes) or (y.dtype in int_dtypes)
         # Since Rust just has a pointer to them, have python keep them!
-        numpy_arrays_to_keep = [X, y, qid]
+        numpy_arrays_to_keep = [X, y]
+
+        qid_strs: Optional[Dict[int, str]] = None
+        qid_nums = None
+        if isinstance(qids, list):
+            qid_nums = np.zeros(N, dtype="int32")
+            qid_to_index: Dict[str, int] = {}
+            for i, qid in enumerate(qids):
+                if qid in qid_to_index:
+                    qid_nums[i] = qid_to_index[qid]
+                else:
+                    num = len(qid_to_index)
+                    qid_to_index[qid] = num
+                    qid_nums[i] = num
+            # reverse:
+            qid_strs = dict((v, k) for (k, v) in qid_to_index.items())
+        elif isinstance(qids, np.ndarray):
+            assert qids.dtype in int_dtypes
+            qid_nums = qids
+        else:
+            raise ValueError("Unsupported type for qids: {}".format(type(qids)))
+
+        numpy_arrays_to_keep.append(qid_nums)
+
+        qid_str_json = json.dumps(qid_strs).encode("utf-8") if qid_strs else ffi.NULL
+
         # Pass pointers to these arrays to Rust!
         dataset = CDataset(
             _handle_c_result(
-                lib.make_dense_dataset_f32_f64_i64(
+                lib.make_dense_dataset_v2(
                     N,
                     D,
-                    ffi.cast("float *", X.ctypes.data),
-                    ffi.cast("double *", y.ctypes.data),
-                    ffi.cast("int64_t *", qid.ctypes.data),
+                    ffi.cast("void *", X.ctypes.data),
+                    str(X.dtype).encode("utf-8"),
+                    ffi.cast("void *", y.ctypes.data),
+                    str(y.dtype).encode("utf-8"),
+                    ffi.cast("void *", qid_nums.ctypes.data),
+                    str(qid_nums.dtype).encode("utf-8"),
+                    qid_str_json,
                 )
             )
         )
@@ -349,13 +384,13 @@ class CDataset:
         child.numpy_arrays_to_keep = self.numpy_arrays_to_keep
         return child
 
-    def train_model(self, train_req: 'TrainRequest') -> CModel:
+    def train_model(self, train_req: "TrainRequest") -> CModel:
         """
         Train a Model on this Dataset.
         """
         self._require_init()
         train_req_str = json.dumps(train_req.to_dict()).encode("utf-8")
-        #with sys_pipes():
+        # with sys_pipes():
         train_resp = _handle_c_result(lib.train_model(train_req_str, self.pointer))
         return CModel(train_resp, train_req)
 
@@ -505,26 +540,38 @@ def query_json(message: str):
     _maybe_raise_error_json(response)
     return response
 
-def evaluate_query(measure: str, gains: Union[List[int], List[float]], scores: List[float], depth: Optional[int]=None, opts: Dict[str, Any] = {}) -> float:
+
+def evaluate_query(
+    measure: str,
+    gains: Union[List[int], List[float]],
+    scores: List[float],
+    depth: Optional[int] = None,
+    opts: Dict[str, Any] = {},
+) -> float:
     n = len(gains)
-    assert(len(scores) == n)
+    assert len(scores) == n
     encoded_depth = -1
     if depth is not None:
         assert depth > 0
         encoded_depth = depth
-    gains_arr = np.array(gains, dtype='float32')
-    scores_arr = np.array(scores, dtype='float64')
+    gains_arr = np.array(gains, dtype="float32")
+    scores_arr = np.array(scores, dtype="float64")
     print(gains_arr, scores_arr)
-    measure_c = measure.encode('utf-8')
-    opts_c = json.dumps(opts).encode('utf-8')
-    float_ptr = ffi.cast('double*', 
-        _handle_c_result(lib.evaluate_query(
-                measure_c, 
-                n, 
-                ffi.cast("float*", gains_arr.ctypes.data), 
-                ffi.cast("double*", scores_arr.ctypes.data), 
-                encoded_depth, 
-                opts_c)))
+    measure_c = measure.encode("utf-8")
+    opts_c = json.dumps(opts).encode("utf-8")
+    float_ptr = ffi.cast(
+        "double*",
+        _handle_c_result(
+            lib.evaluate_query(
+                measure_c,
+                n,
+                ffi.cast("float*", gains_arr.ctypes.data),
+                ffi.cast("double*", scores_arr.ctypes.data),
+                encoded_depth,
+                opts_c,
+            )
+        ),
+    )
     number = float_ptr[0]
     print(number)
     lib.free_f64(float_ptr)

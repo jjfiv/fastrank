@@ -96,24 +96,38 @@ impl DenseDataset {
     pub fn try_new(
         n_instances: usize,
         n_features: usize,
-        xs: &'static [f32],
-        ys: &'static [f64],
-        qids: &'static [i64],
+        xs: TypedArrayRef,
+        ys: TypedArrayRef,
+        qids: TypedArrayRef,
+        qid_strs: Option<HashMap<i64, String>>,
     ) -> Result<DenseDataset, Box<dyn Error>> {
-        let mut qid_nos = Vec::new();
-        let mut qid_strings = HashMap::new();
-
-        for qid in qids.iter().cloned() {
-            qid_strings.entry(qid).or_insert_with(|| format!("{}", qid));
-            qid_nos.push(qid);
+        if ys.len() != n_instances {
+            Err("Bad y-length")?;
         }
+        if qids.len() != n_instances {
+            Err("Bad qids-length")?;
+        }
+        if xs.len() != (n_instances * n_features) {
+            Err("Bad xs-length")?;
+        }
+
+        let qid_strings = if let Some(from_py) = qid_strs {
+            from_py
+        } else {
+            let mut computed = HashMap::new();
+            for id in 0..n_instances {
+                let qid = qids.get_i64(id).unwrap();
+                computed.entry(qid).or_insert_with(|| format!("{}", qid));
+            }
+            computed
+        };
 
         Ok(DenseDataset {
             n_instances,
             n_features,
-            xs: TypedArrayRef::DenseF32(xs),
-            ys: TypedArrayRef::DenseF64(ys),
-            qids: TypedArrayRef::DenseI64(qids),
+            xs,
+            ys,
+            qids,
             qid_strings,
             feature_names: HashMap::new(),
         })

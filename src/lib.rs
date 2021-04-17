@@ -32,16 +32,16 @@ pub mod random_forest;
 pub mod stats;
 
 use dataset::DatasetRef;
-use dense_dataset::DenseDataset;
+use dense_dataset::{DenseDataset, TypedArrayRef};
 use json_api::TrainRequest;
 use model::ModelEnum;
 use qrel::QuerySetJudgments;
 
 use libc::{c_char, c_void};
-use std::error::Error;
 use std::ffi::CString;
 use std::ptr;
 use std::slice;
+use std::{collections::HashMap, error::Error};
 
 mod ffi;
 use ffi::*;
@@ -195,6 +195,55 @@ pub extern "C" fn query_json(json_cmd_str: *const c_void) -> *const c_void {
     result_to_json(result_exec_json(accept_str("query_json_str", json_cmd_str)))
 }
 
+fn typed_array(
+    name: &str,
+    xs: *const c_void,
+    n: usize,
+    dtype: *const c_void,
+) -> Result<TypedArrayRef, Box<dyn Error>> {
+    if xs.is_null() {
+        Err(format!("NULL array pointer for {}!", name))?;
+    }
+    let dtype = accept_str("dtype", dtype)?;
+
+    let complete = match dtype {
+        "float32" => TypedArrayRef::DenseF32(unsafe { slice::from_raw_parts(xs as *const f32, n) }),
+        "float64" => TypedArrayRef::DenseF64(unsafe { slice::from_raw_parts(xs as *const f64, n) }),
+        "int32" => TypedArrayRef::DenseI32(unsafe { slice::from_raw_parts(xs as *const i32, n) }),
+        "int64" => TypedArrayRef::DenseI64(unsafe { slice::from_raw_parts(xs as *const i64, n) }),
+        other => Err(format!("Unexpected dtype={} for {}", other, name))?,
+    };
+
+    Ok(complete)
+}
+
+#[no_mangle]
+pub extern "C" fn make_dense_dataset_v2(
+    n: usize,
+    d: usize,
+    x: *const c_void,
+    x_type: *const c_void,
+    y: *const c_void,
+    y_type: *const c_void,
+    qids: *const c_void,
+    qids_type: *const c_void,
+    qid_strs: *const c_void,
+) -> *const CResult {
+    let x_len = n * d;
+    result_to_c((|| {
+        let xs = typed_array("xs", x, x_len, x_type)?;
+        let y = typed_array("y", y, n, y_type)?;
+        let qids = typed_array("qids", qids, n, qids_type)?;
+        let qid_strs: Option<HashMap<i64, String>> = if qid_strs.is_null() {
+            None
+        } else {
+            Some(serde_json::from_str(accept_str("qid_strs", qid_strs)?)?)
+        };
+        let dataset = DenseDataset::try_new(n, d, xs, y, qids, qid_strs)?;
+        Ok(dataset.into_ref())
+    })())
+}
+
 #[no_mangle]
 pub extern "C" fn make_dense_dataset_f32_f64_i64(
     n: usize,
@@ -208,7 +257,15 @@ pub extern "C" fn make_dense_dataset_f32_f64_i64(
     let y_slice: &'static [f64] = unsafe { slice::from_raw_parts(y, n) };
     let qid_slice: &'static [i64] = unsafe { slice::from_raw_parts(qids, n) };
     result_to_c(
-        DenseDataset::try_new(n, d, x_slice, y_slice, qid_slice).map(|dd| CDataset {
+        DenseDataset::try_new(
+            n,
+            d,
+            TypedArrayRef::DenseF32(x_slice),
+            TypedArrayRef::DenseF64(y_slice),
+            TypedArrayRef::DenseI64(qid_slice),
+            None,
+        )
+        .map(|dd| CDataset {
             reference: dd.into_ref(),
         }),
     )

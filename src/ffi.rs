@@ -153,7 +153,13 @@ pub(crate) fn result_dataset_query_json(
     };
 
     let response = match query_str? {
-        "is_sampled" => if dataset.reference.is_sampled() { "true".to_string() } else { "false".to_string() },
+        "is_sampled" => {
+            if dataset.reference.is_sampled() {
+                "true".to_string()
+            } else {
+                "false".to_string()
+            }
+        }
         "num_features" => serde_json::to_string(&dataset.reference.n_dim())?,
         "feature_ids" => serde_json::to_string(&dataset.reference.features())?,
         "num_instances" => serde_json::to_string(&dataset.reference.instances().len())?,
