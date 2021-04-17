@@ -226,4 +226,30 @@ impl RankingDataset for DenseDataset {
     fn try_lookup_feature(&self, name_or_num: &str) -> Result<FeatureId, Box<dyn Error>> {
         crate::dataset::try_lookup_feature(self, &self.feature_names, name_or_num)
     }
+
+    fn score_all(&self, model: &dyn Model) -> Vec<NotNan<f64>> {
+        let mut output = Vec::with_capacity(self.n_instances);
+        for id in 0..self.n_instances {
+            let id = InstanceId::from_index(id);
+            let instance = DenseDatasetInstance { id, dataset: self };
+            output.push(model.score(&instance))
+        }
+        output
+    }
+
+    fn gains(&self) -> Vec<NotNan<f32>> {
+        let mut output = Vec::with_capacity(self.n_instances);
+        assert_eq!(self.n_instances, self.ys.len());
+        for id in 0..self.n_instances {
+            output.push(NotNan::new(self.ys.get_f32(id).expect("present")).expect("not-NaN"));
+        }
+        output
+    }
+
+    fn query_ids(&self) -> Vec<&str> {
+        (0..self.n_instances)
+            .map(|index| self.qids.get_i64(index).expect("present"))
+            .map(|qid_id| self.qid_strings[&qid_id].as_str())
+            .collect()
+    }
 }

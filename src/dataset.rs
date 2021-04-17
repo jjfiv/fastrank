@@ -32,6 +32,10 @@ pub trait RankingDataset: Send + Sync {
     fn instances(&self) -> Vec<InstanceId>;
     fn instances_by_query(&self) -> HashMap<String, Vec<InstanceId>>;
 
+    fn score_all(&self, model: &dyn Model) -> Vec<NotNan<f64>>;
+    fn gains(&self) -> Vec<NotNan<f32>>;
+    fn query_ids(&self) -> Vec<&str>;
+
     fn score(&self, id: InstanceId, model: &dyn Model) -> NotNan<f64>;
     fn gain(&self, id: InstanceId) -> NotNan<f32>;
     fn query_id(&self, id: InstanceId) -> &str;
@@ -95,6 +99,16 @@ impl RankingDataset for DatasetRef {
     }
     fn try_lookup_feature(&self, name_or_num: &str) -> Result<FeatureId, Box<dyn Error>> {
         self.data.try_lookup_feature(name_or_num)
+    }
+
+    fn score_all(&self, model: &dyn Model) -> Vec<NotNan<f64>> {
+        self.data.score_all(model)
+    }
+    fn gains(&self) -> Vec<NotNan<f32>> {
+        self.data.gains()
+    }
+    fn query_ids(&self) -> Vec<&str> {
+        return self.data.query_ids();
     }
 }
 
@@ -174,6 +188,30 @@ impl RankingDataset for SampledDatasetRef {
                 fid.to_index()
             ))?
         }
+    }
+
+    fn score_all(&self, model: &dyn Model) -> Vec<NotNan<f64>> {
+        let mut output = Vec::with_capacity(self.instances.len());
+        for id in self.instances.iter().cloned() {
+            output.push(self.parent.score(id, model));
+        }
+        output
+    }
+
+    fn gains(&self) -> Vec<NotNan<f32>> {
+        let mut output = Vec::with_capacity(self.instances.len());
+        for id in self.instances.iter().cloned() {
+            output.push(self.parent.gain(id));
+        }
+        output
+    }
+
+    fn query_ids(&self) -> Vec<&str> {
+        self.instances
+            .iter()
+            .cloned()
+            .map(|it| self.parent.query_id(it))
+            .collect()
     }
 }
 
@@ -327,6 +365,21 @@ impl RankingDataset for LoadedRankingDataset {
     }
     fn try_lookup_feature(&self, name_or_num: &str) -> Result<FeatureId, Box<dyn Error>> {
         try_lookup_feature(self, &self.feature_names, name_or_num)
+    }
+
+    fn score_all(&self, model: &dyn Model) -> Vec<NotNan<f64>> {
+        self.instances
+            .iter()
+            .map(|it| model.score(&it.features))
+            .collect()
+    }
+
+    fn gains(&self) -> Vec<NotNan<f32>> {
+        self.instances.iter().map(|it| it.gain).collect()
+    }
+
+    fn query_ids(&self) -> Vec<&str> {
+        self.instances.iter().map(|it| it.qid.as_str()).collect()
     }
 }
 

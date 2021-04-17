@@ -1,9 +1,9 @@
-use crate::dataset::RankingDataset;
 use crate::evaluators::SetEvaluator;
 use crate::model::{DenseLinearRankingModel, ModelEnum, WeightedEnsemble};
 use crate::randutil::shuffle;
 use crate::FeatureId;
 use crate::Scored;
+use crate::{dataset::RankingDataset, evaluators::DatasetVectors};
 use oorandom::Rand64;
 use ordered_float::NotNan;
 use rayon::prelude::*;
@@ -102,12 +102,14 @@ fn optimize_inner(
         .to_index() as u32)
         + 1;
 
+    let eval_vectors = DatasetVectors::new(data);
+
     // Initialize to even weights:
     let mut model = DenseLinearRankingModel::new(model_dim);
     model.reset(params.init_random, &mut rand, &data.features());
 
     // Initialize this local best (within current restart cycle):
-    let start_score = evaluator.evaluate_mean(&model);
+    let start_score = evaluator.fast_eval(&model, &eval_vectors);
     let mut current_best = Scored::new(start_score, model.clone());
 
     loop {
@@ -157,7 +159,7 @@ fn optimize_inner(
                     for _ in 0..num_iter {
                         let w = orig_weight + total_step;
                         model.weights[current_feature.to_index()] = w;
-                        let score = evaluator.evaluate_mean(&model);
+                        let score = evaluator.fast_eval(&model, &eval_vectors);
 
                         if current_best.replace_if_better(score, model.clone()) {
                             if !quiet {
@@ -254,3 +256,39 @@ impl CoordinateAscentParams {
         }
     } // learn
 } // impl
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::dataset;
+
+    const DELTA: f64 = 1e-5;
+    fn assert_float_eq(attr: &str, x: f64, y: f64) {
+        if (x - y).abs() > DELTA {
+            panic!("{} failure: {} != {} at tolerance={}", attr, x, y, DELTA);
+        }
+    }
+
+    #[test]
+    fn test() {
+        let feature_names =
+            dataset::load_feature_names_json("examples/trec_news_2018.features.json").unwrap();
+        let train_dataset = dataset::LoadedRankingDataset::load_libsvm(
+            "examples/trec_news_2018.train",
+            Some(&feature_names),
+        )
+        .unwrap()
+        .into_ref();
+        let params = CoordinateAscentParams {
+            num_restarts: 2,
+            quiet: true,
+            seed: 42,
+            ..CoordinateAscentParams::default()
+        };
+        let eval = SetEvaluator::create(&train_dataset, "ndcg", None).unwrap();
+        let model = params.learn(&train_dataset, &eval);
+
+        let ndcg = eval.evaluate_mean(&model);
+        assert_float_eq("ca.ndcg == predefined", ndcg, 0.761162733368733);
+    }
+}

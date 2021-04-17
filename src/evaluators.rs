@@ -61,6 +61,30 @@ impl RankedInstance {
     }
 }
 
+pub struct DatasetVectors<'dataset> {
+    _dataset: &'dataset dyn RankingDataset,
+    instances: Vec<InstanceId>,
+    gains: Vec<NotNan<f32>>,
+    qid_to_index: HashMap<&'dataset str, Vec<usize>>,
+}
+
+impl<'d> DatasetVectors<'d> {
+    pub fn new(dataset: &'d dyn RankingDataset) -> DatasetVectors<'d> {
+        let query_ids: Vec<&'d str> = dataset.query_ids();
+        let mut qid_to_indices: HashMap<&'d str, Vec<usize>> =
+            HashMap::with_capacity(query_ids.len());
+        for (i, qid) in query_ids.into_iter().enumerate() {
+            qid_to_indices.entry(qid).or_default().push(i);
+        }
+        Self {
+            _dataset: dataset,
+            instances: dataset.instances(),
+            gains: dataset.gains(),
+            qid_to_index: qid_to_indices,
+        }
+    }
+}
+
 #[derive(Clone)]
 pub struct SetEvaluator {
     dataset: DatasetRef,
@@ -139,6 +163,36 @@ impl SetEvaluator {
         PercentileStats::new(&means)
     }
 
+    pub fn fast_eval(&self, model: &dyn Model, vectors: &DatasetVectors<'_>) -> f64 {
+        debug_assert_eq!(vectors.instances.len(), self.dataset.instances().len());
+
+        // only deal with generating scores, when vectors are pre-created:
+        let predictions: Vec<NotNan<f64>> = self.dataset.score_all(model);
+        let mut sum = 0.0;
+        let mut n = 0;
+
+        for (qid, indices) in vectors.qid_to_index.iter() {
+            // Predict for every document:
+            let mut ranked_list: Vec<_> = indices
+                .iter()
+                .cloned()
+                .map(|index| {
+                    let score = predictions[index];
+                    let gain = vectors.gains[index];
+                    RankedInstance::new(score, gain, vectors.instances[index])
+                })
+                .collect();
+            // Sort largest to smallest:
+            ranked_list.sort_unstable();
+            sum += self.evaluator.score(&qid, &ranked_list);
+            n += 1;
+        }
+        if n == 0 {
+            return 0.0;
+        }
+        return sum / (n as f64);
+    }
+
     pub fn evaluate_mean(&self, model: &dyn Model) -> f64 {
         let scores = self.evaluate_to_vec(model);
         if scores.len() == 0 {
@@ -174,15 +228,27 @@ impl SetEvaluator {
 
     pub fn evaluate_to_vec(&self, model: &dyn Model) -> Vec<f64> {
         let mut scores = Vec::new();
-        for (qid, docs) in self.dataset.instances_by_query().iter() {
+
+        let predictions: Vec<NotNan<f64>> = self.dataset.score_all(model);
+
+        let instances = self.dataset.instances();
+        let gains: Vec<NotNan<f32>> = self.dataset.gains();
+        let query_ids: Vec<&str> = self.dataset.query_ids();
+
+        let mut qid_to_indices: HashMap<&str, Vec<usize>> = HashMap::with_capacity(query_ids.len());
+        for (i, qid) in query_ids.into_iter().enumerate() {
+            qid_to_indices.entry(qid).or_default().push(i);
+        }
+
+        for (qid, indices) in qid_to_indices {
             // Predict for every document:
-            let mut ranked_list: Vec<_> = docs
+            let mut ranked_list: Vec<_> = indices
                 .iter()
                 .cloned()
                 .map(|index| {
-                    let score = self.dataset.score(index, model);
-                    let gain = self.dataset.gain(index);
-                    RankedInstance::new(score, gain, index)
+                    let score = predictions[index];
+                    let gain = gains[index];
+                    RankedInstance::new(score, gain, instances[index])
                 })
                 .collect();
             // Sort largest to smallest:
