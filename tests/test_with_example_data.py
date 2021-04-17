@@ -7,11 +7,13 @@ from typing import List
 from sklearn.datasets import load_svmlight_file
 from collections import Counter
 from fastrank import CQRel, CDataset, query_json, TrainRequest
+import pytest
 
 
 def mean(xs: List[float]) -> float:
     """Strongly type a mean; since pyright hates np.mean"""
     return sum(xs) / len(xs)
+
 
 _FEATURE_EXPECTED_NDCG5 = {
     "0": 0.10882970494872854,
@@ -52,255 +54,241 @@ _EXPECTED_FEATURE_NAMES = set(
 )
 QREL = CQRel.load_file("examples/newsir18-entity.qrel")
 RD = CDataset.open_ranksvm(
-            "examples/trec_news_2018.train",
-            "examples/trec_news_2018.features.json",
+    "examples/trec_news_2018.train",
+    "examples/trec_news_2018.features.json",
+)
+
+
+def test_version():
+    assert fastrank.__version__ == "0.8.0"
+
+
+# Test out "from_numpy:"
+(TRAIN_X, TRAIN_Y, TRAIN_QID) = load_svmlight_file(
+    "examples/trec_news_2018.train",
+    dtype=np.float32,
+    zero_based=False,
+    query_id=True,
+)
+
+# Train a model for further tests:
+TRAIN_REQ = TrainRequest.coordinate_ascent()
+ca_params = TRAIN_REQ.params
+ca_params.seed = 42
+ca_params.quiet = True
+MODEL = RD.train_model(TRAIN_REQ)
+
+
+def test_cqrel_serialization():
+    qrel = QREL.to_dict()
+    qrel2 = CQRel.from_dict(qrel)
+    assert qrel == qrel2.to_dict()
+
+
+def test_cqrel():
+    qrel = QREL
+    assert qrel.queries() == _FULL_QUERIES
+    assert set(qrel.to_dict().keys()) == _FULL_QUERIES
+
+
+def test_load_dataset():
+    rd = CDataset.open_ranksvm("examples/trec_news_2018.train")
+    assert rd.queries() == _EXPECTED_QUERIES
+    assert rd.feature_ids() == _EXPECTED_FEATURE_IDS
+    assert rd.feature_names() == set(str(x) for x in _EXPECTED_FEATURE_IDS)
+    assert rd.num_features() == _EXPECTED_D
+    assert rd.num_instances() == _EXPECTED_N
+
+
+def test_load_dataset_feature_names():
+    assert RD.queries() == _EXPECTED_QUERIES
+    assert RD.feature_ids() == _EXPECTED_FEATURE_IDS
+    assert RD.feature_names() == _EXPECTED_FEATURE_NAMES
+    assert RD.num_features() == _EXPECTED_D
+    assert RD.num_instances() == _EXPECTED_N
+
+
+def test_subsample_queries():
+    rd = RD
+    # Test subsample:
+    _SUBSET = """378 363 811 321 807 347 646 397 802 804""".split()
+    sample_rd = rd.subsample_queries(_SUBSET)
+    assert sample_rd.queries() == set(_SUBSET)
+    assert sample_rd.num_features() == _EXPECTED_D
+    assert sample_rd.feature_ids() == _EXPECTED_FEATURE_IDS
+    assert sample_rd.feature_names() == _EXPECTED_FEATURE_NAMES
+
+    # calculate how many instances rust should've selected:
+    count_by_qid = Counter(TRAIN_QID)
+    expected_count = sum(count_by_qid[int(q)] for q in _SUBSET)
+    assert sample_rd.num_instances() == expected_count
+
+    # Train a model:
+    train_req = TRAIN_REQ.clone()
+    lp: CoordinateAscentParams = train_req.params  # type:ignore
+    lp.num_restarts = 1
+    lp.num_max_iterations = 1
+    lp.step_base = 1.0
+    lp.normalize = False
+    lp.init_random = False
+    model = sample_rd.train_model(train_req)
+    sparse = model.predict_scores(sample_rd)
+    assert len(sparse) == sample_rd.num_instances()
+    dense = model.predict_dense_scores(sample_rd)
+    assert len(dense) > len(sparse)
+    # make sure that all the ids we asked for are present:
+    for (_qid, ids) in sample_rd.instances_by_query().items():
+        for num in ids:
+            assert num < len(dense)
+
+
+def test_subsample_features():
+    rd = RD
+    name_to_index = rd.feature_name_to_index()
+    # single feature model:
+    train_req = TRAIN_REQ.clone()
+    lp: CoordinateAscentParams = train_req.params  # type:ignore
+    lp.num_restarts = 1
+    lp.num_max_iterations = 1
+    lp.step_base = 1.0
+    lp.normalize = False
+    lp.init_random = False
+    feature_scores = {}
+    for feature in _EXPECTED_FEATURE_NAMES:
+        rd_single = rd.subsample_feature_names([feature])
+        model = rd_single.train_model(train_req)
+        feature_scores[feature] = np.mean(list(rd.evaluate(model, "ndcg@5").values()))
+        assert feature_scores[feature] == pytest.approx(
+            _FEATURE_EXPECTED_NDCG5[feature]
         )
-
-class TestRustAPI(unittest.TestCase):
-    @classmethod
-    def setUpClass(cls):
-        cls.qrel = QREL
-        cls.rd = RD
-        # Test out "from_numpy:"
-        (cls.train_X, cls.train_y, cls.train_qid) = load_svmlight_file(
-            "examples/trec_news_2018.train",
-            dtype=np.float32,
-            zero_based=False,
-            query_id=True,
-        )
-        cls.train_req = TrainRequest.coordinate_ascent()
-        ca_params = cls.train_req.params
-        ca_params.seed = 42
-        ca_params.quiet = True
-        cls.model = cls.rd.train_model(TestRustAPI.train_req)
-
-    def test_version(self):
-        assert fastrank.__version__ == '0.8.0'
-
-    def test_cqrel_serialization(self):
-        qrel = TestRustAPI.qrel.to_dict()
-        qrel2 = CQRel.from_dict(qrel)
-        self.assertEqual(qrel, qrel2.to_dict())
-
-    def test_cqrel(self):
-        qrel = TestRustAPI.qrel
-        self.assertEqual(qrel.queries(), _FULL_QUERIES)
-        self.assertEqual(set(qrel.to_dict().keys()), _FULL_QUERIES)
-
-    def test_load_dataset(self):
-        rd = CDataset.open_ranksvm("examples/trec_news_2018.train")
-        assert rd.queries() == _EXPECTED_QUERIES
-        assert rd.feature_ids() == _EXPECTED_FEATURE_IDS
-        assert rd.feature_names() == set(str(x) for x in _EXPECTED_FEATURE_IDS)
-        assert rd.num_features() == _EXPECTED_D
-        assert rd.num_instances() == _EXPECTED_N
-
-    def test_load_dataset_feature_names(self):
-        rd = TestRustAPI.rd
-        assert rd.queries() == _EXPECTED_QUERIES
-        assert rd.feature_ids() == _EXPECTED_FEATURE_IDS
-        assert rd.feature_names() == _EXPECTED_FEATURE_NAMES
-        assert rd.num_features() == _EXPECTED_D
-        assert rd.num_instances() == _EXPECTED_N
-
-    def test_subsample_queries(self):
-        rd = TestRustAPI.rd
-        # Test subsample:
-        _SUBSET = """378 363 811 321 807 347 646 397 802 804""".split()
-        sample_rd = rd.subsample_queries(_SUBSET)
-        assert sample_rd.queries() == set(_SUBSET)
-        assert sample_rd.num_features() == _EXPECTED_D
-        assert sample_rd.feature_ids() == _EXPECTED_FEATURE_IDS
-        assert sample_rd.feature_names() == _EXPECTED_FEATURE_NAMES
-
-        # calculate how many instances rust should've selected:
-        count_by_qid = Counter(TestRustAPI.train_qid)
-        expected_count = sum(count_by_qid[int(q)] for q in _SUBSET)
-        assert sample_rd.num_instances() == expected_count
-
-        # Train a model:
-        train_req = TestRustAPI.train_req.clone()
-        lp: CoordinateAscentParams = train_req.params # type:ignore
-        lp.num_restarts = 1
-        lp.num_max_iterations = 1
-        lp.step_base = 1.0
-        lp.normalize = False
-        lp.init_random = False
-        model = sample_rd.train_model(train_req) 
-        sparse = model.predict_scores(sample_rd)
-        assert len(sparse) == sample_rd.num_instances()
-        dense = model.predict_dense_scores(sample_rd)
-        assert len(dense) > len(sparse)
-        # make sure that all the ids we asked for are present:
-        for (_qid, ids) in sample_rd.instances_by_query().items():
-            for num in ids:
-                assert num < len(dense)
-
-    def test_subsample_features(self):
-        rd = TestRustAPI.rd
-        name_to_index = rd.feature_name_to_index()
-        # single feature model:
-        train_req = TestRustAPI.train_req.clone()
-        lp: CoordinateAscentParams = train_req.params # type:ignore
-        lp.num_restarts = 1
-        lp.num_max_iterations = 1
-        lp.step_base = 1.0
-        lp.normalize = False
-        lp.init_random = False
-        feature_scores = {}
-        for feature in _EXPECTED_FEATURE_NAMES:
-            rd_single = rd.subsample_feature_names([feature])
-            model = rd_single.train_model(train_req)
-            feature_scores[feature] = np.mean(
-                list(rd.evaluate(model, "ndcg@5").values())
-            )
-            self.assertAlmostEqual(
-                feature_scores[feature],
-                _FEATURE_EXPECTED_NDCG5[feature],
-                msg="NDCG@5 single-feature ranker expectation: {0}".format(feature),
-            )
-            my_index = name_to_index[feature]
-            for (i, w) in enumerate(model.to_dict()["Linear"]["weights"]):
-                if i == my_index:
-                    pass
-                else:
-                    self.assertAlmostEqual(w, 0.0, msg="Every other weight should be zero.")
-
-    def test_train_model(self):
-        rd = TestRustAPI.rd
-        model = TestRustAPI.model
-        self.assertIsNotNone(model)
-        model._require_init()
-
-    def test_random_forest(self):
-        rd = TestRustAPI.rd
-        train_req = TrainRequest.random_forest()
-        train_req.measure = "ndcg@5"
-        rfp: RandomForestParams = train_req.params # type:ignore
-        rfp.num_trees = 10
-        rfp.seed = 42
-        rfp.min_leaf_support = 1
-        rfp.max_depth = 10
-        rfp.split_candidates = 32
-        rfp.quiet = True
+        my_index = name_to_index[feature]
+        for (i, w) in enumerate(model.to_dict()["Linear"]["weights"]):
+            if i == my_index:
+                pass
+            else:
+                assert w == 0.0
 
 
-        measures = []
-        for _ in range(10):
-            model = rd.train_model(train_req)
-            self.assertEqual(len(model.to_dict()["Ensemble"]["weights"]), 10)
-            # for this particular dataset, there should be no difference between calculating with and without qrels:
-            ndcg5_with: float = mean(
-                list(rd.evaluate(model, "ndcg@5", TestRustAPI.qrel).values())
-            )
-            ndcg5_without: float = mean(list(rd.evaluate(model, "ndcg@5").values()))
-            self.assertAlmostEqual(ndcg5_with, ndcg5_without)
-            measures.append(ndcg5_with)
-        for m in measures:
-            # SemVer change-detection: need to bump major version if this is no longer true!
-            self.assertAlmostEqual(m, 0.4582452225554235)
+def test_train_model():
+    model = MODEL
+    assert model != None
+    model._require_init()
 
-    def test_model_serialization(self):
-        rd = TestRustAPI.rd
-        model = TestRustAPI.model
-        self.assertIsNotNone(model)
-        model._require_init()
-        # ensure a deep measure is the same:
-        map_orig = rd.evaluate(model, "map")
-        map_after_json = rd.evaluate(model.from_dict(model.to_dict()), "map")
-        self.assertEqual(len(map_orig), len(map_after_json))
-        self.assertEqual(map_orig.keys(), map_after_json.keys())
-        for key, val in map_orig.items():
-            self.assertAlmostEqual(val, map_after_json[key])
 
-    def test_from_numpy(self):
-        # this loader supports zero-based!
-        EXPECTED_FEATURE_IDS = set(range(_EXPECTED_D - 1))
+def test_random_forest():
+    TRAIN_REQ = TrainRequest.random_forest()
+    TRAIN_REQ.measure = "ndcg@5"
+    rfp: RandomForestParams = TRAIN_REQ.params  # type:ignore
+    rfp.num_trees = 10
+    rfp.seed = 42
+    rfp.min_leaf_support = 1
+    rfp.max_depth = 10
+    rfp.split_candidates = 32
+    rfp.quiet = True
 
-        # Test out "from_numpy:"
-        train_X = TestRustAPI.train_X.todense()
-        train_y = TestRustAPI.train_y
-        train_qid = TestRustAPI.train_qid
-        train = CDataset.from_numpy(train_X, train_y, train_qid)
-
-        (train_N, train_D) = train_X.shape
-        assert train.is_sampled() == False
-        assert train.num_features() == train_D
-        assert train.num_instances() == train_N
-        assert train.queries() == _EXPECTED_QUERIES
-        assert train.feature_ids() == EXPECTED_FEATURE_IDS
-        assert train.feature_names() == set(str(x) for x in EXPECTED_FEATURE_IDS)
-        assert train.num_features() == _EXPECTED_D - 1
-        assert train.num_instances() == _EXPECTED_N
-
-        model = train.train_model(TestRustAPI.train_req)
-        model._require_init()
-        scores = model.predict_scores(train)
-        assert 0 in scores
-        assert len(scores) - 1 in scores
-        assert len(scores) == len(train_y)
-
-    def test_evaluate(self):
-        rd = TestRustAPI.rd
-        model = TestRustAPI.model
+    measures = []
+    for _ in range(10):
+        model = RD.train_model(TRAIN_REQ)
+        assert len(model.to_dict()["Ensemble"]["weights"]) == 10
         # for this particular dataset, there should be no difference between calculating with and without qrels:
-        ndcg5_with = np.mean(
-            list(rd.evaluate(model, "ndcg@5", TestRustAPI.qrel).values())
-        )
-        ndcg5_without = np.mean(list(rd.evaluate(model, "ndcg@5").values()))
-        assert abs(ndcg5_with - ndcg5_without) < 0.0000001
-
-    def test_sampled_evaluation(self):
-        rd = TestRustAPI.rd
-        model = TestRustAPI.model
-        measure = "ndcg@5"
-        measures_by_query = rd.evaluate(model, measure)
-
-        first_ten_queries = sorted(measures_by_query.keys())[:10]
-
-        assert rd.is_sampled() == False
-        partial = rd.subsample_queries(first_ten_queries)
-        assert partial.is_sampled() == True
-        self.assertEqual(len(partial.instances_by_query()), len(first_ten_queries))
-
-        partial_scores = partial.evaluate(model, measure)
-        self.assertEqual(len(first_ten_queries), len(partial_scores))
-        for qid in first_ten_queries:
-            self.assertAlmostEqual(partial_scores[qid], measures_by_query[qid])
-
-    def test_trecrun(self):
-        rd = TestRustAPI.rd
-        model = TestRustAPI.model
-        with tempfile.NamedTemporaryFile(mode="r") as tmpf:
-            with self.assertRaises(Exception) as context:
-                rd.predict_trecrun(model, tmpf.name)
-            self.assertRegex(
-                str(context.exception), "Dataset does not contain document ids"
-            )
-
-    def train_req_object(self):
-        rust = TrainRequest.from_dict(query_json("coordinate_ascent_defaults"))
-        py = TrainRequest()
-
-        for _ in range(2):
-            self.assertEqual(rust.measure, py.measure)
-            self.assertEqual(rust.judgments, py.judgments)
-            assert isinstance(rust.params, CoordinateAscentParams)
-            assert isinstance(py.params, CoordinateAscentParams)
-            self.assertEqual(rust.params.num_restarts, py.params.num_restarts)
-            self.assertEqual(
-                rust.params.num_max_iterations, py.params.num_max_iterations
-            )
-            self.assertAlmostEqual(rust.params.step_base, py.params.step_base)
-            self.assertAlmostEqual(rust.params.step_scale, py.params.step_scale)
-            self.assertAlmostEqual(rust.params.tolerance, py.params.tolerance)
-            self.assertEqual(rust.params.init_random, py.params.init_random)
-            self.assertEqual(rust.params.output_ensemble, py.params.output_ensemble)
-            self.assertEqual(rust.params.quiet, py.params.quiet)
-
-            # no serialization issues!
-            py = TrainRequest.from_dict(py.to_dict())
+        ndcg5_with: float = mean(list(RD.evaluate(model, "ndcg@5", QREL).values()))
+        ndcg5_without: float = mean(list(RD.evaluate(model, "ndcg@5").values()))
+        assert ndcg5_with == pytest.approx(ndcg5_without)
+        measures.append(ndcg5_with)
+    for m in measures:
+        # SemVer change-detection: need to bump major version if this is no longer true!
+        assert m == pytest.approx(0.4582452225554235)
 
 
-if __name__ == "__main__":
-    unittest.main()
+def test_model_serialization():
+    model = MODEL
+    assert model != None
+    model._require_init()
+    # ensure a deep measure is the same:
+    map_orig = RD.evaluate(model, "map")
+    map_after_json = RD.evaluate(model.from_dict(model.to_dict()), "map")
+    assert len(map_orig) == len(map_after_json)
+    assert map_orig.keys() == map_after_json.keys()
+    for key, val in map_orig.items():
+        assert val == map_after_json[key]
+
+
+def test_from_numpy():
+    # this loader supports zero-based!
+    EXPECTED_FEATURE_IDS = set(range(_EXPECTED_D - 1))
+
+    # Test out "from_numpy:"
+    train_X = TRAIN_X.todense()
+    train_y = TRAIN_Y
+    train_qid = TRAIN_QID
+    train = CDataset.from_numpy(train_X, train_y, train_qid)
+
+    (train_N, train_D) = train_X.shape
+    assert train.is_sampled() == False
+    assert train.num_features() == train_D
+    assert train.num_instances() == train_N
+    assert train.queries() == _EXPECTED_QUERIES
+    assert train.feature_ids() == EXPECTED_FEATURE_IDS
+    assert train.feature_names() == set(str(x) for x in EXPECTED_FEATURE_IDS)
+    assert train.num_features() == _EXPECTED_D - 1
+    assert train.num_instances() == _EXPECTED_N
+
+    model = train.train_model(TRAIN_REQ)
+    model._require_init()
+    scores = model.predict_scores(train)
+    assert 0 in scores
+    assert len(scores) - 1 in scores
+    assert len(scores) == len(train_y)
+
+
+def test_evaluate():
+    # for this particular dataset, there should be no difference between calculating with and without qrels:
+    ndcg5_with = np.mean(list(RD.evaluate(MODEL, "ndcg@5", QREL).values()))
+    ndcg5_without = np.mean(list(RD.evaluate(MODEL, "ndcg@5").values()))
+    assert abs(ndcg5_with - ndcg5_without) < 0.0000001
+
+
+def test_sampled_evaluation():
+    measure = "ndcg@5"
+    measures_by_query = RD.evaluate(MODEL, measure)
+
+    first_ten_queries = sorted(measures_by_query.keys())[:10]
+
+    assert RD.is_sampled() == False
+    partial = RD.subsample_queries(first_ten_queries)
+    assert partial.is_sampled() == True
+    assert len(partial.instances_by_query()) == len(first_ten_queries)
+
+    partial_scores = partial.evaluate(MODEL, measure)
+    assert len(first_ten_queries) == len(partial_scores)
+    for qid in first_ten_queries:
+        assert partial_scores[qid] == pytest.approx(measures_by_query[qid])
+
+
+def test_trecrun():
+    with tempfile.NamedTemporaryFile(mode="r") as tmpf:
+        with pytest.raises(Exception) as context:
+            RD.predict_trecrun(MODEL, tmpf.name)
+        assert "Dataset does not contain document ids" in str(context.value)
+
+
+def TRAIN_REQ_object():
+    rust = TrainRequest.from_dict(query_json("coordinate_ascent_defaults"))
+    py = TrainRequest()
+
+    for _ in range(2):
+        assert rust.measure == py.measure
+        assert rust.judgments == py.judgments
+        assert isinstance(rust.params, CoordinateAscentParams)
+        assert isinstance(py.params, CoordinateAscentParams)
+        assert rust.params.num_restarts == py.params.num_restarts
+        assert rust.params.num_max_iterations == py.params.num_max_iterations
+        assert rust.params.step_base == py.params.step_base
+        assert rust.params.step_scale == py.params.step_scale
+        assert rust.params.tolerance == py.params.tolerance
+        assert rust.params.init_random == py.params.init_random
+        assert rust.params.output_ensemble == py.params.output_ensemble
+        assert rust.params.quiet == py.params.quiet
+
+        # no serialization issues!
+        py = TrainRequest.from_dict(py.to_dict())
