@@ -31,22 +31,22 @@ def test_rf():
 def test_sklearn_rf():
     rf = RandomForestRegressor(random_state=RAND)
     rf.fit(X, y)
-    rf = ImportedRanker.from_sklearn(rf)
-    assert rf.score(X, y, qid, measure) > 0.85
+    rf = ImportedRanker.from_sklearn(rf, measure=measure)
+    assert rf.score(X, y, qid) > 0.85
 
 
 def test_sklearn_gbc():
     rf = GradientBoostingClassifier(random_state=RAND)
     rf.fit(X, y > 0)
-    rf = ImportedRanker.from_sklearn(rf)
-    assert rf.score(X, y, qid, measure) > 0.70
+    rf = ImportedRanker.from_sklearn(rf, measure=measure)
+    assert rf.score(X, y, qid) > 0.70
 
 
 def test_sklearn_gbr():
     rf = GradientBoostingRegressor(random_state=RAND)
     rf.fit(X, y)
-    rf = ImportedRanker.from_sklearn(rf)
-    assert rf.score(X, y, qid, measure) > 0.70
+    rf = ImportedRanker.from_sklearn(rf, measure=measure)
+    assert rf.score(X, y, qid) > 0.70
 
 
 def test_ca():
@@ -60,5 +60,5 @@ def test_ca():
 def test_sklearn_lr():
     sk = LinearRegression()
     sk.fit(X, y)
-    lr = ImportedRanker.from_sklearn(sk)
-    assert lr.score(X, y, qid, measure) > 0.74
+    lr = ImportedRanker.from_sklearn(sk, measure=measure)
+    assert lr.score(X, y, qid) > 0.74

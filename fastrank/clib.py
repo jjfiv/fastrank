@@ -66,7 +66,7 @@ class CQRel:
 
     This is important because some measures supported by fastrank require the total number of relevance judgments (e.g., MAP) or the maximum ideal gain (e.g., NDCG).
 
-    Use :func:`~load_file` or :func:`~from_dict` to create one of these.
+    Use `load_file` or `from_dict` to create one of these.
     """
 
     def __init__(self, pointer=None):
@@ -127,8 +127,8 @@ class CModel:
     """
     Usually you're going to get this from:
 
-    - training a new model on a dataset: :func:`~fastrank.clib.CDataset.train_model`.
-    - loading a saved model from a file, using :func:`~from_dict`.
+    - training a new model on a dataset: `CDataset.train_model`.
+    - loading a saved model from a file, using `from_dict`.
     """
 
     def __init__(self, pointer, params=None):
@@ -202,7 +202,7 @@ class CModel:
         return response
 
     def to_dict(self):
-        """Turn the opaque Rust model pointer into inspectable JSON structure. This ties nicely to :func:`~from_dict`.
+        """Turn the opaque Rust model pointer into inspectable JSON structure. This ties nicely to `from_dict`.
 
         >>> model_copy = CModel.from_dict(model.to_dict())
 
@@ -220,8 +220,8 @@ class CDataset:
 
     Construct one of these with either:
 
-     - :func:`~open_ranksvm` a file in ranksvm/ranklib/libsvm/svmlight format.
-     - :func:`~from_numpy` with pre-loaded/pre-created numpy arrays.
+     - `open_ranksvm` a file in ranksvm/ranklib/libsvm/svmlight format.
+     - `from_numpy` with pre-loaded/pre-created numpy arrays.
     """
 
     def __init__(self, pointer=None):
@@ -240,10 +240,8 @@ class CDataset:
         """
         Construct a dataset with optional feature names. Supports gzip, bzip2 and zstd compression.
 
-        :param data_path: The path to your input file.
-        :type data_path: str
-        :param feature_names_path: The path to a JSON file of feature names (optional).
-        :type feature_names_path: str
+        - ``data_path``: The path to your input file.
+        - ``feature_names_path``: The path to a JSON file of feature names (optional).
 
         >>> dataset = CDataset.open_ranksvm("examples/trec_news_2018.train", "examples/trec_news_2018.features.json")
         """
@@ -263,17 +261,14 @@ class CDataset:
         """
         Construct a dataset from in-memory numpy arrays. This class will hold on to them so that Rust points at them. If you delete them, bad things will happen.
 
-        :param X: The feature matrix, a (NxD) float3matrix; N instances, D features. Must be dense for now.
-        :type X: numpy.array
-        :param y: The judgment vector, a 1xN or Nx1 float/int matrix.
-        :type y: numpy.array
-        :param qids: The numeric or string representations of query ids 1xN or Nx1 int/string matrix.
-        :type qids: List[str] OR numpy.array
+        - ``X``: The feature matrix, a (NxD) float3matrix; N instances, D features. Must be dense for now.
+        - ``y``: The judgment vector, a 1xN or Nx1 float/int matrix.
+        - ``qids``: The numeric or string representations of query ids 1xN or Nx1 int/string matrix.
 
         We can then construct our own numpy arrays, or use the sklearn loader:
 
         >>> from sklearn.datasets import load_svmlight_file
-        >>> (X, y, qid) = load_svmlight_file("../examples/trec_news_2018.train", dtype=np.float32, zero_based=False, query_id=True)
+        >>> (X, y, qid) = load_svmlight_file("../examples/trec_news_2018.train", zero_based=False, query_id=True)
         >>> X = X.todense()
         >>> dataset = CDataset.from_numpy(X, y, qid)
         """
@@ -384,7 +379,7 @@ class CDataset:
         child.numpy_arrays_to_keep = self.numpy_arrays_to_keep
         return child
 
-    def train_model(self, train_req: "TrainRequest") -> CModel:
+    def train_model(self, train_req: "fastrank.training.TrainRequest") -> CModel:
         """
         Train a Model on this Dataset.
         """
@@ -450,14 +445,11 @@ class CDataset:
         """
         Evaluate a model across this dataset using the given evaluator, optionally with judgments passed in.
 
-        :param model: The model to evaluate.
-        :type model: CModel
-        :param evaluator: The evaluator to use. Supports "ndcg", "ndcg@5", etc.
-        :type evaluator: str
-        :param qrel: The judgments, if any.
-        :type qrel: CQRel
-        :return: A mapping from query ids to evaluator scores.
-        :rtype: Dict[str, float]
+        - ``model``: The model to evaluate.
+        - ``evaluator``: The evaluator to use. Supports "ndcg", "ndcg@5", etc.
+        - ``qrel``: The judgments, if any.
+
+        ***returns*** A mapping from query ids to evaluator scores.
         """
         self._require_init()
         model._require_init()
@@ -477,6 +469,10 @@ class CDataset:
         return response
 
     def predict_scores(self, model: CModel) -> Dict[int, float]:
+        """
+        Get a score for each instance in your dataset.
+        Returns sparse results; intended if you have sampled your dataset in any way.
+        """
         return model.predict_scores(self)
 
     def predict_trecrun(
@@ -490,18 +486,13 @@ class CDataset:
         """
         Save output of model on this dataset to output_path with name system_name.
 
-        :param model: Get results from this model.
-        :type model: CModel
-        :param output_path: Save results in TREC Run format to this file.
-        :type output_path: str
-        :param system_name: What you want to call your system in the final column; or else "fastrank".
-        :type system_name: str
-        :param quiet: Don't print success if ``quiet`` is True.
-        :type quiet: bool
-        :param depth: Only keep the best ``depth`` results per query unless ``depth`` is zero.
-        :type depth: int
-        :return: The number of records written.
-        :rtype: int
+        - ``model``: Get results from this model.
+        - ``output_path``: Save results in TREC Run format to this file.
+        - ``system_name``: What you want to call your system in the final column; or else "fastrank".
+        - ``quiet``: Don't print success if ``quiet`` is True.
+        - ``depth``: Only keep the best ``depth`` results per query unless ``depth`` is zero.
+
+        ***returns*** The number of records written.
         """
         self._require_init()
         model._require_init()
@@ -573,6 +564,5 @@ def evaluate_query(
         ),
     )
     number = float_ptr[0]
-    print(number)
     lib.free_f64(float_ptr)
     return number

@@ -3,6 +3,7 @@ from typing import Union, Any, Dict, Optional
 import random
 from .clib import CQRel, query_json
 
+
 @attr.s
 class CoordinateAscentParams:
     """
