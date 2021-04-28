@@ -1,0 +1,18 @@
+version: 2
+updates:
+- package-ecosystem: cargo
+  directory: "/"
+  schedule:
+    interval: daily
+    time: "10:00"
+  open-pull-requests-limit: 10
+  ignore:
+  - dependency-name: oorandom
+    versions:
+    - "> 11.1.0"
+  - dependency-name: zstd
+    versions:
+    - 0.7.0+zstd.1.4.9
+  - dependency-name: bzip2
+    versions:
+    - 0.4.1
