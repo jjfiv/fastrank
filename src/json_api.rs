@@ -163,7 +163,7 @@ pub fn evaluate_query(
                 .unwrap_or(false);
             compute_dcg(&gains, depth, compute_ideal)
         }
-        "mrr" | "rr" | "recip_rank" => compute_recip_rank(&ranked),
+        "mrr" | "rr" | "recip_rank" => compute_recip_rank(&ranked, depth),
         "ndcg" => {
             let gains: Vec<f32> = ranked.iter().map(|r| r.gain.clone()).collect();
             let ideal = compute_dcg(&gains, depth, true);

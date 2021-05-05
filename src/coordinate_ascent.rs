@@ -102,6 +102,9 @@ fn optimize_inner(
         + 1;
 
     let eval_vectors = DatasetVectors::new(data);
+    let mut zeroed: Vec<f64> = eval_vectors.instances.iter().map(|_| 0.0).collect();
+    let mut features: Vec<f64> = zeroed.clone();
+    let mut scores: Vec<f64> = zeroed.clone();
 
     // Initialize to even weights:
     let mut model = DenseLinearRankingModel::new(model_dim);
@@ -140,6 +143,19 @@ fn optimize_inner(
 
                 let current_feature_name = data.feature_name(*current_feature);
                 let orig_weight = model.weights[current_feature.to_index()];
+
+                // let's compute the scores for each example with this feature as zero:
+                model.weights[current_feature.to_index()] = 0.0;
+                for (id, zp) in eval_vectors.instances.iter().zip(zeroed.iter_mut()) {
+                    *zp = data.score(*id, &model);
+                }
+                // let's grab this feature as a column vector -- missing values zero'd out.
+                for (id, fv) in eval_vectors.instances.iter().zip(features.iter_mut()) {
+                    *fv = data
+                        .get_feature_value(*id, *current_feature)
+                        .unwrap_or_default();
+                }
+
                 let mut total_step;
 
                 for dir in SIGN {
@@ -157,7 +173,16 @@ fn optimize_inner(
                     for _ in 0..num_iter {
                         let w = orig_weight + total_step;
                         model.weights[current_feature.to_index()] = w;
-                        let score = evaluator.fast_eval(&model, &eval_vectors);
+
+                        // we only need to measure the contribution of the current feature.
+                        for (pred, (zero, ftr)) in scores
+                            .iter_mut()
+                            .zip(zeroed.iter().cloned().zip(features.iter().cloned()))
+                        {
+                            *pred = zero + ftr * w;
+                        }
+                        let score = evaluator.fast_eval2(&scores, &eval_vectors);
+                        //let score = evaluator.fast_eval(&model, &eval_vectors);
 
                         if current_best.replace_if_better(score, model.clone()) {
                             if !quiet {
