@@ -19,7 +19,6 @@ pub mod io_helper;
 /// Contains code for reading ranklib and libsvm input files.
 pub mod libsvm;
 pub mod model;
-pub mod normalizers;
 pub mod qrel;
 pub mod randutil;
 pub mod sampling;

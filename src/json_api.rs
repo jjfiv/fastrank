@@ -2,7 +2,6 @@ use crate::{
     cart::{learn_cart_tree, CARTParams},
     io_helper, InstanceId,
 };
-use ordered_float::NotNan;
 use std::error::Error;
 
 use crate::coordinate_ascent::CoordinateAscentParams;
@@ -69,7 +68,7 @@ pub fn predict_scores(
         for index in docs.iter().cloned() {
             let score = dataset.score(index, model);
             // TODO make this an error?
-            scores.insert(index.to_index(), score.into_inner());
+            scores.insert(index.to_index(), score);
         }
     }
 
@@ -136,8 +135,8 @@ pub fn evaluate_query(
     for (i, (gain, score)) in gains.iter().zip(scores.iter()).enumerate() {
         let id = InstanceId::from_index(i);
         ranked.push(RankedInstance {
-            score: NotNan::new(*score)?,
-            gain: NotNan::new(*gain)?,
+            score: *score,
+            gain: *gain,
             identifier: id,
         });
     }
@@ -156,7 +155,7 @@ pub fn evaluate_query(
             compute_ap(&ranked, num_rel as u32)
         }
         "dcg" => {
-            let gains: Vec<NotNan<f32>> = ranked.iter().map(|r| r.gain.clone()).collect();
+            let gains: Vec<f32> = ranked.iter().map(|r| r.gain.clone()).collect();
             let compute_ideal = opts
                 .get("ideal")
                 .map(|v| v.as_bool())
@@ -166,7 +165,7 @@ pub fn evaluate_query(
         }
         "mrr" | "rr" | "recip_rank" => compute_recip_rank(&ranked),
         "ndcg" => {
-            let gains: Vec<NotNan<f32>> = ranked.iter().map(|r| r.gain.clone()).collect();
+            let gains: Vec<f32> = ranked.iter().map(|r| r.gain.clone()).collect();
             let ideal = compute_dcg(&gains, depth, true);
             let dcg = compute_dcg(&gains, depth, false);
             dcg / ideal

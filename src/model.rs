@@ -2,10 +2,8 @@ use crate::instance::FeatureRead;
 use crate::{FeatureId, Scored};
 use std::cmp;
 
-use ordered_float::NotNan;
-
 pub trait Model: std::fmt::Debug {
-    fn score(&self, features: &dyn FeatureRead) -> NotNan<f64>;
+    fn score(&self, features: &dyn FeatureRead) -> f64;
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -17,7 +15,7 @@ pub enum ModelEnum {
 }
 
 impl Model for ModelEnum {
-    fn score(&self, features: &dyn FeatureRead) -> NotNan<f64> {
+    fn score(&self, features: &dyn FeatureRead) -> f64 {
         match self {
             ModelEnum::SingleFeature(m) => m.score(features),
             ModelEnum::Linear(m) => m.score(features),
@@ -34,9 +32,9 @@ pub struct SingleFeatureModel {
 }
 
 impl Model for SingleFeatureModel {
-    fn score(&self, features: &dyn FeatureRead) -> NotNan<f64> {
+    fn score(&self, features: &dyn FeatureRead) -> f64 {
         let val = features.get(self.fid).unwrap_or(0.0);
-        NotNan::new(self.dir * val).unwrap()
+        self.dir * val
     }
 }
 
@@ -46,21 +44,8 @@ pub struct DenseLinearRankingModel {
 }
 
 impl Model for DenseLinearRankingModel {
-    fn score(&self, features: &dyn FeatureRead) -> NotNan<f64> {
-        if let Ok(output) = NotNan::new(features.dotp(&self.weights)) {
-            return output;
-        } else {
-            println!("weights: {:?}", self.weights);
-            for (i, w) in self.weights.iter().enumerate() {
-                println!(
-                    "features[{}]: {:?} * {}",
-                    i,
-                    features.get(FeatureId::from_index(i)),
-                    w
-                )
-            }
-            panic!("NaN prediction.");
-        }
+    fn score(&self, features: &dyn FeatureRead) -> f64 {
+        features.dotp(&self.weights)
     }
 }
 
@@ -68,11 +53,11 @@ impl Model for DenseLinearRankingModel {
 pub enum TreeNode {
     FeatureSplit {
         fid: FeatureId,
-        split: NotNan<f64>,
+        split: f64,
         lhs: Box<TreeNode>,
         rhs: Box<TreeNode>,
     },
-    LeafNode(NotNan<f64>),
+    LeafNode(f64),
 }
 
 impl TreeNode {
@@ -85,17 +70,16 @@ impl TreeNode {
 }
 
 impl Model for TreeNode {
-    fn score(&self, features: &dyn FeatureRead) -> NotNan<f64> {
+    fn score(&self, features: &dyn FeatureRead) -> f64 {
         match self {
-            TreeNode::LeafNode(score) => score.clone(),
+            TreeNode::LeafNode(score) => (score.clone()),
             TreeNode::FeatureSplit {
                 fid,
                 split,
                 lhs,
                 rhs,
             } => {
-                let fval =
-                    NotNan::new(features.get(*fid).unwrap_or(0.0)).expect("NaN in feature eval...");
+                let fval = features.get(*fid).unwrap_or(0.0);
                 if fval <= *split {
                     lhs.score(features)
                 } else {
@@ -108,7 +92,7 @@ impl Model for TreeNode {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WeightedEnsemble {
-    weights: Vec<NotNan<f64>>,
+    weights: Vec<f64>,
     models: Vec<ModelEnum>,
 }
 
@@ -125,11 +109,11 @@ impl WeightedEnsemble {
 }
 
 impl Model for WeightedEnsemble {
-    fn score(&self, features: &dyn FeatureRead) -> NotNan<f64> {
+    fn score(&self, features: &dyn FeatureRead) -> f64 {
         let mut output = 0.0;
         for (weight, model) in self.weights.iter().zip(self.models.iter()) {
-            output += weight.into_inner() * model.score(features).into_inner();
+            output += weight * model.score(features);
         }
-        NotNan::new(output).expect("NaN produced by ensemble.")
+        output
     }
 }

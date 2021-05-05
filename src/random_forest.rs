@@ -101,14 +101,7 @@ pub fn learn_ensemble(
             .into_iter()
             .map(|tree| {
                 let m = ModelEnum::DecisionTree(tree.item);
-                Scored::new(
-                    if params.weight_trees {
-                        tree.score.into_inner()
-                    } else {
-                        1.0
-                    },
-                    m,
-                )
+                Scored::new(if params.weight_trees { tree.score } else { 1.0 }, m)
             })
             .collect(),
     )

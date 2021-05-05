@@ -1,17 +1,45 @@
 /// This module defines classification and regression trees.
-use crate::stats;
+use crate::stats::{self, StreamingStats};
 use crate::Scored;
 use crate::{
     dataset::{DatasetRef, RankingDataset},
     sampling::DatasetSampling,
 };
-use crate::{model::TreeNode, normalizers::FeatureStats};
-use crate::{FeatureId, InstanceId};
+use crate::{model::TreeNode, stats::ComputedStats};
+use crate::{FeatureId, HashMap, InstanceId};
 use oorandom::Rand64;
-use ordered_float::NotNan;
 
-/// Unsafe: const-fn: create a zero that's not a NaN.
-const ZERO_F64: NotNan<f64> = unsafe { NotNan::unchecked_new(0.0) };
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FeatureStats {
+    pub feature_stats: HashMap<FeatureId, ComputedStats>,
+}
+
+impl FeatureStats {
+    pub fn compute(dataset: &dyn RankingDataset) -> FeatureStats {
+        let mut stats_builders: HashMap<FeatureId, StreamingStats> = dataset
+            .features()
+            .iter()
+            .cloned()
+            .map(|fid| (fid, StreamingStats::new()))
+            .collect();
+
+        for inst in dataset.instances().iter().cloned() {
+            for (fid, stats) in stats_builders.iter_mut() {
+                if let Some(fval) = dataset.get_feature_value(inst, *fid) {
+                    stats.push(fval)
+                }
+                // Explicitly skip missing; so as not to make it part of normalization.
+            }
+        }
+
+        FeatureStats {
+            feature_stats: stats_builders
+                .into_iter()
+                .flat_map(|(fid, stats)| stats.finish().map(|cs| (fid, cs)))
+                .collect(),
+        }
+    }
+}
 
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize, Copy)]
 pub enum SplitSelectionStrategy {
@@ -22,7 +50,7 @@ pub enum SplitSelectionStrategy {
 }
 
 impl SplitSelectionStrategy {
-    pub fn importance(&self, lhs: &[NotNan<f32>], rhs: &[NotNan<f32>]) -> NotNan<f64> {
+    pub fn importance(&self, lhs: &[f32], rhs: &[f32]) -> f64 {
         match self {
             SplitSelectionStrategy::SquaredError => -(squared_error(lhs) + squared_error(rhs)),
             SplitSelectionStrategy::BinaryGiniImpurity => {
@@ -46,83 +74,75 @@ impl SplitSelectionStrategy {
                 let rhs_w = rhs.len() as f64;
                 let lhs_variance = gain_stats(lhs).unwrap().variance * lhs_w;
                 let rhs_variance = gain_stats(rhs).unwrap().variance * rhs_w;
-                -NotNan::new(lhs_variance + rhs_variance).expect("variance NaN")
+                -(lhs_variance + rhs_variance)
             }
         }
     }
 }
 
-pub fn compute_output(ids: &[InstanceId], dataset: &dyn RankingDataset) -> NotNan<f64> {
+pub fn compute_output(ids: &[InstanceId], dataset: &dyn RankingDataset) -> f64 {
     if ids.len() == 0 {
-        return ZERO_F64.clone();
+        return 0.0;
     }
     let mut gain_sum = 0.0;
     for gain in ids.iter().cloned().map(|index| dataset.gain(index)) {
-        gain_sum += gain.into_inner() as f64;
+        gain_sum += gain as f64;
     }
-    NotNan::new(gain_sum / (ids.len() as f64)).expect("Leaf output NaN.")
+    gain_sum / (ids.len() as f64)
 }
 
-pub fn gain_stats(gains: &[NotNan<f32>]) -> Option<stats::ComputedStats> {
+pub fn gain_stats(gains: &[f32]) -> Option<stats::ComputedStats> {
     let mut label_stats = stats::StreamingStats::new();
     for it in gains {
-        label_stats.push(it.into_inner() as f64);
+        label_stats.push(*it as f64);
     }
     label_stats.finish()
 }
 
-fn average_gain(gains: &[NotNan<f32>]) -> NotNan<f64> {
+fn average_gain(gains: &[f32]) -> f64 {
     if gains.len() == 0 {
-        return ZERO_F64;
+        return 0.0;
     }
     let mut gain_sum = 0.0;
     for gain in gains {
-        gain_sum += gain.into_inner() as f64;
+        gain_sum += *gain as f64;
     }
-    NotNan::new(gain_sum / (gains.len() as f64)).expect("Leaf output NaN.")
+    gain_sum / (gains.len() as f64)
 }
-fn squared_error(gains: &[NotNan<f32>]) -> NotNan<f64> {
+fn squared_error(gains: &[f32]) -> f64 {
     let output = average_gain(gains);
 
     let mut sum_sq_errors = 0.0;
     for gain in gains {
-        let diff = output - f64::from(gain.into_inner());
-        sum_sq_errors += (diff * diff).into_inner();
+        let diff = output - (*gain as f64);
+        sum_sq_errors += diff * diff;
     }
-    NotNan::new(sum_sq_errors).unwrap()
+    sum_sq_errors
 }
-fn gini_impurity(gains: &[NotNan<f32>]) -> NotNan<f64> {
+fn gini_impurity(gains: &[f32]) -> f64 {
     if gains.len() == 0 {
-        return ZERO_F64;
+        return 0.0;
     }
     let count = gains.len() as f64;
-    let positive = gains
-        .iter()
-        .cloned()
-        .filter(|it| it.into_inner() > 0.0)
-        .count();
+    let positive = gains.iter().cloned().filter(|it| *it > 0.0).count();
     let p_yes = (positive as f64) / count;
     let p_no = (count - (positive as f64)) / count;
     let gini = p_yes * (1.0 - p_yes) + p_no * (1.0 - p_no);
-    NotNan::new(gini).expect("gini was NaN")
+    gini
 }
-fn plogp(x: f64) -> NotNan<f64> {
+fn plogp(x: f64) -> f64 {
     if x == 0.0 {
-        ZERO_F64
+        0.0
     } else {
-        NotNan::new(x * x.log2()).expect("entropy/plogp returned NaN")
+        x * x.log2()
     }
 }
-fn entropy(gains: &[NotNan<f32>]) -> NotNan<f64> {
+fn entropy(gains: &[f32]) -> f64 {
     if gains.len() == 0 {
-        return ZERO_F64;
+        return 0.0;
     }
     let count = gains.len() as f64;
-    let positive = gains
-        .iter()
-        .cloned()
-        .filter(|it| it.into_inner() > 0.0)
-        .count();
+    let positive = gains.iter().cloned().filter(|it| *it > 0.0).count();
     let p_yes = (positive as f64) / count;
     let p_no = (count - (positive as f64)) / count;
     let entropy = -plogp(p_yes) - plogp(p_no);
@@ -190,24 +210,24 @@ impl RecursionParams {
             dataset.select(&fsc.rhs, &remaining_features).into_ref(),
         )
     }
-    fn to_output(&self, dataset: &DatasetRef) -> NotNan<f64> {
+    fn to_output(&self, dataset: &DatasetRef) -> f64 {
         compute_output(&dataset.instances(), dataset)
     }
 }
 
 struct FeatureSplitCandidate {
     fid: FeatureId,
-    split: NotNan<f64>,
+    split: f64,
     lhs: Vec<InstanceId>,
     rhs: Vec<InstanceId>,
-    importance: NotNan<f64>,
+    importance: f64,
 }
 
 #[derive(Debug)]
 struct SplitCandidate {
     pos: usize,
-    split: NotNan<f64>,
-    importance: NotNan<f64>,
+    split: f64,
+    importance: f64,
 }
 
 fn generate_split_candidate(
@@ -229,7 +249,7 @@ fn generate_split_candidate(
         .collect();
     instance_feature.sort_unstable();
 
-    let scores: Vec<NotNan<f64>> = instance_feature.iter().map(|sf| sf.score).collect();
+    let scores: Vec<f64> = instance_feature.iter().map(|sf| sf.score).collect();
     let ids: Vec<InstanceId> = instance_feature.into_iter().map(|sf| sf.item).collect();
     let mut gains = Vec::with_capacity(instances.len());
     for id in instances.iter() {
@@ -242,12 +262,12 @@ fn generate_split_candidate(
 
     let split_positions: Vec<Scored<usize>> = if let Some(k) = params.split_candidates {
         let range = stats.max - stats.min;
-        let splits: Vec<NotNan<f64>> = (1..k)
+        let splits: Vec<f64> = (1..k)
             .map(|i| (i as f64) / (k as f64))
-            .map(|f| NotNan::new(f * range + stats.min).unwrap())
+            .map(|f| f * range + stats.min)
             .collect();
         // collect instance index in ids/scores where the "splits" are.
-        let mut split_positions: Vec<Scored<usize>> = Vec::new();
+        let mut split_positions: Vec<Scored<usize>> = Vec::with_capacity(splits.len());
         let mut ids_i = 0;
         for position in splits.iter() {
             // linearly classify:
@@ -259,7 +279,7 @@ fn generate_split_candidate(
                     continue;
                 }
             }
-            split_positions.push(Scored::new(position.into_inner(), ids_i));
+            split_positions.push(Scored::new(*position, ids_i));
         }
         split_positions
     } else {
@@ -271,7 +291,7 @@ fn generate_split_candidate(
                     continue;
                 }
             }
-            split_positions.push(Scored::new(rhs.into_inner(), i + 1));
+            split_positions.push(Scored::new(rhs, i + 1));
         }
         split_positions
     };
@@ -368,7 +388,7 @@ fn learn_recursive(
         })
         .collect();
 
-    candidates.sort_unstable_by_key(|fsc| fsc.importance);
+    candidates.sort_unstable_by(|lhs, rhs| lhs.importance.partial_cmp(&rhs.importance).unwrap());
     if let Some(fsc) = candidates.last() {
         let (lhs_d, rhs_d) = step.choose_split(dataset, fsc);
 
@@ -408,9 +428,9 @@ mod test {
             .iter()
             .map(|x| *x as f32)
             .collect();
-        let ys: Vec<NotNan<f32>> = [7, 7, 7, 7, 2, 2, 2, 12, 12, 12]
+        let ys: Vec<f32> = [7, 7, 7, 7, 2, 2, 2, 12, 12, 12]
             .iter()
-            .map(|y| NotNan::new(*y as f32).unwrap())
+            .map(|y| *y as f32)
             .collect();
 
         let training_instances: Vec<Instance> = xs
@@ -439,8 +459,8 @@ mod test {
                         .get_feature_value(inst, FeatureId::from_index(0))
                         .unwrap()
                 ),
-                *py,
-                dataset.gain(inst).into_inner().into(),
+                py,
+                dataset.gain(inst).into(),
             );
         }
     }

@@ -1,7 +1,5 @@
 use crate::libsvm;
-use crate::normalizers::Normalizer;
 use crate::FeatureId;
-use ordered_float::NotNan;
 
 pub enum Features {
     Dense32(Vec<f32>),
@@ -20,20 +18,6 @@ impl Features {
         }
         features
     }
-    pub fn apply_normalization(&mut self, normalizer: &Normalizer) {
-        match self {
-            Features::Dense32(arr) => {
-                for (fid, val) in arr.iter_mut().enumerate() {
-                    *val = normalizer.normalize(FeatureId::from_index(fid), *val);
-                }
-            }
-            Features::Sparse32(arr) => {
-                for (fid, val) in arr.iter_mut() {
-                    *val = normalizer.normalize(*fid, *val);
-                }
-            }
-        }
-    }
 }
 
 pub trait FeatureRead {
@@ -43,7 +27,7 @@ pub trait FeatureRead {
 }
 
 pub struct Instance {
-    pub gain: NotNan<f32>,
+    pub gain: f32,
     pub qid: String,
     pub docid: Option<String>,
     pub features: Features,
@@ -93,7 +77,7 @@ impl FeatureRead for Features {
 }
 
 impl Instance {
-    pub fn new(gain: NotNan<f32>, qid: String, docid: Option<String>, features: Features) -> Self {
+    pub fn new(gain: f32, qid: String, docid: Option<String>, features: Features) -> Self {
         Self {
             gain,
             qid,

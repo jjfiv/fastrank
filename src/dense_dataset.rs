@@ -2,7 +2,6 @@ use crate::dataset::{DatasetRef, RankingDataset};
 use crate::instance::FeatureRead;
 use crate::model::Model;
 use crate::{FeatureId, InstanceId};
-use ordered_float::NotNan;
 use std::collections::HashMap;
 use std::error::Error;
 use std::sync::Arc;
@@ -185,19 +184,15 @@ impl RankingDataset for DenseDataset {
             .map(|(k, v)| (k.to_string(), v))
             .collect()
     }
-    fn score(&self, id: InstanceId, model: &dyn Model) -> NotNan<f64> {
+    fn score(&self, id: InstanceId, model: &dyn Model) -> f64 {
         let instance = DenseDatasetInstance { id, dataset: self };
         model.score(&instance)
     }
-    fn gain(&self, id: InstanceId) -> NotNan<f32> {
+    fn gain(&self, id: InstanceId) -> f32 {
         let index = id.to_index();
-        let y = self
-            .ys
+        self.ys
             .get_f32(index)
-            .expect("only valid TrainingInstances should exist");
-        NotNan::new(y)
-            .map_err(|_| format!("NaN in ys[{}]", index))
-            .unwrap()
+            .expect("only valid TrainingInstances should exist")
     }
     fn query_id(&self, id: InstanceId) -> &str {
         let qid_no = self.qids.get_i64(id.to_index()).unwrap();
@@ -227,7 +222,7 @@ impl RankingDataset for DenseDataset {
         crate::dataset::try_lookup_feature(self, &self.feature_names, name_or_num)
     }
 
-    fn score_all(&self, model: &dyn Model) -> Vec<NotNan<f64>> {
+    fn score_all(&self, model: &dyn Model) -> Vec<f64> {
         let mut output = Vec::with_capacity(self.n_instances);
         for id in 0..self.n_instances {
             let id = InstanceId::from_index(id);
@@ -237,11 +232,11 @@ impl RankingDataset for DenseDataset {
         output
     }
 
-    fn gains(&self) -> Vec<NotNan<f32>> {
+    fn gains(&self) -> Vec<f32> {
         let mut output = Vec::with_capacity(self.n_instances);
         assert_eq!(self.n_instances, self.ys.len());
         for id in 0..self.n_instances {
-            output.push(NotNan::new(self.ys.get_f32(id).expect("present")).expect("not-NaN"));
+            output.push(self.ys.get_f32(id).expect("present"));
         }
         output
     }

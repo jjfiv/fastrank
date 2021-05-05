@@ -5,7 +5,6 @@ use crate::FeatureId;
 use crate::Scored;
 use crate::{dataset::RankingDataset, evaluators::DatasetVectors};
 use oorandom::Rand64;
-use ordered_float::NotNan;
 use rayon::prelude::*;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -92,7 +91,7 @@ fn optimize_inner(
     params: &CoordinateAscentParams,
 ) -> Scored<DenseLinearRankingModel> {
     let quiet = params.quiet;
-    let tolerance = NotNan::new(params.tolerance).unwrap();
+    let tolerance = params.tolerance;
 
     let fids: Vec<FeatureId> = data.features().clone();
     let model_dim = (fids
@@ -140,7 +139,6 @@ fn optimize_inner(
                 }
 
                 let current_feature_name = data.feature_name(*current_feature);
-
                 let orig_weight = model.weights[current_feature.to_index()];
                 let mut total_step;
 
@@ -216,7 +214,8 @@ impl CoordinateAscentParams {
             .map(|restart_id| (restart_id, Rand64::new(rand.rand_u64().into())))
             .collect();
 
-        let mut history: Vec<Scored<DenseLinearRankingModel>> = Vec::new();
+        let mut history: Vec<Scored<DenseLinearRankingModel>> =
+            Vec::with_capacity(self.num_restarts as usize);
         history.par_extend(states.into_par_iter().map(|(restart_id, rand)| {
             if !self.quiet {
                 println!(
@@ -240,7 +239,7 @@ impl CoordinateAscentParams {
                     let mut model = sm.item.clone();
                     model.l1_normalize();
                     let m = ModelEnum::Linear(model);
-                    Scored::new(sm.score.into_inner(), m)
+                    Scored::new(sm.score, m)
                 })
                 .collect();
             ModelEnum::Ensemble(WeightedEnsemble::new(members))

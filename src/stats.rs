@@ -1,5 +1,4 @@
 //! Derived from https://github.com/jjfiv/chai/blob/6e0e57f0924f9b4c99b5f8b01034681dcd69c76d/src/main/java/ciir/jfoley/chai/math/StreamingStats.java
-use ordered_float::NotNan;
 use std::cmp;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -13,17 +12,17 @@ pub struct ComputedStats {
 }
 
 impl ComputedStats {
-    pub fn mean(&self) -> NotNan<f64> {
-        NotNan::new(self.mean).expect("stddev::mean")
+    pub fn mean(&self) -> f64 {
+        self.mean
     }
-    pub fn stddev(&self) -> NotNan<f64> {
-        NotNan::new(self.variance.sqrt()).expect("stddev::NaN")
+    pub fn stddev(&self) -> f64 {
+        self.variance.sqrt()
     }
-    pub fn max(&self) -> NotNan<f64> {
-        NotNan::new(self.max).expect("stddev::max")
+    pub fn max(&self) -> f64 {
+        self.max
     }
-    pub fn min(&self) -> NotNan<f64> {
-        NotNan::new(self.min).expect("stddev::min")
+    pub fn min(&self) -> f64 {
+        self.min
     }
 }
 
@@ -128,16 +127,13 @@ impl StreamingStats {
 }
 
 pub struct PercentileStats {
-    dataset: Vec<NotNan<f64>>,
+    dataset: Vec<f64>,
 }
 
 impl PercentileStats {
     pub fn new(dataset: &[f64]) -> Self {
-        let mut dataset: Vec<NotNan<f64>> = dataset
-            .iter()
-            .map(|f| NotNan::new(*f).expect("PercentileStats::NaN"))
-            .collect();
-        dataset.sort_unstable();
+        let mut dataset: Vec<f64> = dataset.iter().cloned().collect();
+        dataset.sort_unstable_by(|a, b| a.partial_cmp(b).unwrap());
         PercentileStats { dataset }
     }
     pub fn median(&self) -> f64 {
@@ -152,10 +148,10 @@ impl PercentileStats {
         let rhs = cmp::min(self.dataset.len(), n.ceil() as usize);
         let interp = n.fract();
         if lhs == rhs {
-            return self.dataset[lhs].into_inner();
+            return self.dataset[lhs];
         }
         // LERP:
-        (interp * self.dataset[lhs].into_inner()) + (1.0 - interp) * self.dataset[rhs].into_inner()
+        (interp * self.dataset[lhs]) + (1.0 - interp) * self.dataset[rhs]
     }
     pub fn summary(&self) -> (f64, f64, f64, f64, f64) {
         (

@@ -12,7 +12,6 @@
 //!
 //!
 use fast_float;
-use ordered_float::{FloatIsNan, NotNan};
 use std::fmt;
 use std::io;
 use std::num;
@@ -25,7 +24,7 @@ pub enum ParseError {
     /// Something is wrong with the label; it couldn't be parsed as a float.
     Label(num::ParseFloatError),
     /// Why would you have NaN labels?
-    LabelIsNan(FloatIsNan),
+    LabelIsNan(),
     /// A token was found without a colon; therefore it can't be a valid fnum:fvalue pair.
     FeatureNoColon(),
     /// A feature was defined multiple times (same index) and we don't know what to do.
@@ -106,7 +105,7 @@ impl Feature {
 #[derive(Debug)]
 pub struct Instance {
     /// This is a float value to support regression inputs.
-    pub label: NotNan<f32>,
+    pub label: f32,
     /// This is the query identifier provided with the instance.
     pub query: Option<String>,
     /// This is the sparse feature representation. These *are* expected to be sorted and unique.
@@ -120,7 +119,7 @@ impl Instance {
     /// Constructor. Creates an empty instance with no comment and a negative label.
     pub fn new() -> Instance {
         Instance {
-            label: NotNan::new(0.0).unwrap(),
+            label: 0.0,
             query: None,
             features: Vec::new(),
             comment: None,
@@ -141,15 +140,15 @@ impl Instance {
 
         let mut tokens = data.split_whitespace().peekable();
 
-        // Parse label if we can:
-        inst.label = NotNan::new(
-            tokens
-                .next()
-                .unwrap()
-                .parse::<f64>()
-                .map_err(ParseError::Label)? as f32,
-        )
-        .map_err(ParseError::LabelIsNan)?;
+        // Parse label if we can: TODO check.
+        inst.label = tokens
+            .next()
+            .unwrap()
+            .parse::<f64>()
+            .map_err(ParseError::Label)? as f32;
+        if inst.label.is_nan() {
+            return Err(ParseError::LabelIsNan());
+        }
 
         // Parse qid if we can:
         if let Some(t) = tokens.peek().cloned() {
@@ -349,8 +348,8 @@ mod tests {
                         return lhs == rhs;
                     }
                 }
-                LabelIsNan(_) => {
-                    if let LabelIsNan(_) = *other {
+                LabelIsNan() => {
+                    if let LabelIsNan() = *other {
                         return true;
                     }
                 }

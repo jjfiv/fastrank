@@ -30,3 +30,4 @@ Cargo.lock
 examples/msn30k*.gz
 fastrank/fastrank
 /trec
+/test-env/

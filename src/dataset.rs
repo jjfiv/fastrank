@@ -2,9 +2,7 @@ use crate::instance::{FeatureRead, Instance};
 use crate::io_helper;
 use crate::libsvm;
 use crate::model::Model;
-use crate::normalizers::Normalizer;
 use crate::{FeatureId, InstanceId};
-use ordered_float::NotNan;
 use std::collections::HashMap;
 use std::collections::HashSet;
 use std::error::Error;
@@ -32,12 +30,12 @@ pub trait RankingDataset: Send + Sync {
     fn instances(&self) -> Vec<InstanceId>;
     fn instances_by_query(&self) -> HashMap<String, Vec<InstanceId>>;
 
-    fn score_all(&self, model: &dyn Model) -> Vec<NotNan<f64>>;
-    fn gains(&self) -> Vec<NotNan<f32>>;
+    fn score_all(&self, model: &dyn Model) -> Vec<f64>;
+    fn gains(&self) -> Vec<f32>;
     fn query_ids(&self) -> Vec<&str>;
 
-    fn score(&self, id: InstanceId, model: &dyn Model) -> NotNan<f64>;
-    fn gain(&self, id: InstanceId) -> NotNan<f32>;
+    fn score(&self, id: InstanceId, model: &dyn Model) -> f64;
+    fn gain(&self, id: InstanceId) -> f32;
     fn query_id(&self, id: InstanceId) -> &str;
     /// If the dataset has names, return Some(name)
     fn document_name(&self, id: InstanceId) -> Option<&str>;
@@ -73,10 +71,10 @@ impl RankingDataset for DatasetRef {
     fn instances(&self) -> Vec<InstanceId> {
         self.data.instances()
     }
-    fn score(&self, id: InstanceId, model: &dyn Model) -> NotNan<f64> {
+    fn score(&self, id: InstanceId, model: &dyn Model) -> f64 {
         self.data.score(id, model)
     }
-    fn gain(&self, id: InstanceId) -> NotNan<f32> {
+    fn gain(&self, id: InstanceId) -> f32 {
         self.data.gain(id)
     }
     fn query_id(&self, id: InstanceId) -> &str {
@@ -101,10 +99,10 @@ impl RankingDataset for DatasetRef {
         self.data.try_lookup_feature(name_or_num)
     }
 
-    fn score_all(&self, model: &dyn Model) -> Vec<NotNan<f64>> {
+    fn score_all(&self, model: &dyn Model) -> Vec<f64> {
         self.data.score_all(model)
     }
-    fn gains(&self) -> Vec<NotNan<f32>> {
+    fn gains(&self) -> Vec<f32> {
         self.data.gains()
     }
     fn query_ids(&self) -> Vec<&str> {
@@ -152,10 +150,10 @@ impl RankingDataset for SampledDatasetRef {
         }
         out
     }
-    fn score(&self, id: InstanceId, model: &dyn Model) -> NotNan<f64> {
+    fn score(&self, id: InstanceId, model: &dyn Model) -> f64 {
         self.parent.score(id, model)
     }
-    fn gain(&self, id: InstanceId) -> NotNan<f32> {
+    fn gain(&self, id: InstanceId) -> f32 {
         self.parent.gain(id)
     }
     fn query_id(&self, id: InstanceId) -> &str {
@@ -190,7 +188,7 @@ impl RankingDataset for SampledDatasetRef {
         }
     }
 
-    fn score_all(&self, model: &dyn Model) -> Vec<NotNan<f64>> {
+    fn score_all(&self, model: &dyn Model) -> Vec<f64> {
         let mut output = Vec::with_capacity(self.instances.len());
         for id in self.instances.iter().cloned() {
             output.push(self.parent.score(id, model));
@@ -198,7 +196,7 @@ impl RankingDataset for SampledDatasetRef {
         output
     }
 
-    fn gains(&self) -> Vec<NotNan<f32>> {
+    fn gains(&self) -> Vec<f32> {
         let mut output = Vec::with_capacity(self.instances.len());
         for id in self.instances.iter().cloned() {
             output.push(self.parent.gain(id));
@@ -235,7 +233,6 @@ pub struct LoadedRankingDataset {
     pub instances: Vec<Instance>,
     pub features: Vec<FeatureId>,
     pub n_dim: u32,
-    pub normalization: Option<Normalizer>,
     pub data_by_query: HashMap<String, Vec<InstanceId>>,
     pub feature_names: HashMap<FeatureId, String>,
 }
@@ -287,19 +284,9 @@ impl LoadedRankingDataset {
             instances: data,
             features,
             n_dim: n_dim as u32,
-            normalization: None,
             data_by_query,
             feature_names: feature_names.cloned().unwrap_or(HashMap::new()),
         }
-    }
-    pub fn apply_normalization(&mut self, normalizer: &Normalizer) {
-        if self.normalization.is_some() {
-            panic!("Cannot apply normalization twice!");
-        }
-        for inst in self.instances.iter_mut() {
-            inst.features.apply_normalization(&normalizer);
-        }
-        self.normalization = Some(normalizer.clone());
     }
 
     /// Remove a feature or return "not-found".
@@ -348,10 +335,10 @@ impl RankingDataset for LoadedRankingDataset {
     fn get_feature_value(&self, instance: InstanceId, fid: FeatureId) -> Option<f64> {
         self.instances[instance.to_index()].features.get(fid)
     }
-    fn score(&self, id: InstanceId, model: &dyn Model) -> NotNan<f64> {
+    fn score(&self, id: InstanceId, model: &dyn Model) -> f64 {
         model.score(&self.instances[id.to_index()].features)
     }
-    fn gain(&self, id: InstanceId) -> NotNan<f32> {
+    fn gain(&self, id: InstanceId) -> f32 {
         self.instances[id.to_index()].gain.clone()
     }
     fn query_id(&self, id: InstanceId) -> &str {
@@ -367,14 +354,14 @@ impl RankingDataset for LoadedRankingDataset {
         try_lookup_feature(self, &self.feature_names, name_or_num)
     }
 
-    fn score_all(&self, model: &dyn Model) -> Vec<NotNan<f64>> {
+    fn score_all(&self, model: &dyn Model) -> Vec<f64> {
         self.instances
             .iter()
             .map(|it| model.score(&it.features))
             .collect()
     }
 
-    fn gains(&self) -> Vec<NotNan<f32>> {
+    fn gains(&self) -> Vec<f32> {
         self.instances.iter().map(|it| it.gain).collect()
     }
 

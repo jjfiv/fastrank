@@ -4,17 +4,16 @@ use crate::qrel::QuerySetJudgments;
 use crate::stats::PercentileStats;
 use crate::InstanceId;
 use oorandom::Rand64;
-use ordered_float::NotNan;
 use std::cmp::Ordering;
 use std::collections::HashMap;
 use std::sync::Arc;
 
 const NUM_BOOTSTRAP_SAMPLES: u32 = 200;
 
-#[derive(Debug, Eq)]
+#[derive(Debug)]
 pub struct RankedInstance {
-    pub score: NotNan<f64>,
-    pub gain: NotNan<f32>,
+    pub score: f64,
+    pub gain: f32,
     pub identifier: InstanceId,
 }
 
@@ -30,18 +29,23 @@ impl PartialOrd for RankedInstance {
     }
 }
 
+impl Eq for RankedInstance {}
+
 /// Natural sort: first by socre, descending, then by gain ascending (yielding pessimistic scores on ties), finally by identifier.
 impl Ord for RankedInstance {
+    /// Treat NaN as ties:
     fn cmp(&self, other: &RankedInstance) -> Ordering {
         // score: desc
-        let cmp = self.score.cmp(&other.score).reverse();
-        if cmp != Ordering::Equal {
-            return cmp;
+        match self.score.partial_cmp(&other.score) {
+            Some(Ordering::Less) => return Ordering::Greater,
+            Some(Ordering::Greater) => return Ordering::Less,
+            _ => {}
         }
         // gain: asc
-        let cmp = self.gain.cmp(&other.gain);
-        if cmp != Ordering::Equal {
-            return cmp;
+        match self.gain.partial_cmp(&other.gain) {
+            Some(Ordering::Less) => return Ordering::Less,
+            Some(Ordering::Greater) => return Ordering::Greater,
+            _ => {}
         }
         // identifier: id
         self.identifier.cmp(&other.identifier)
@@ -49,7 +53,7 @@ impl Ord for RankedInstance {
 }
 
 impl RankedInstance {
-    pub fn new(score: NotNan<f64>, gain: NotNan<f32>, identifier: InstanceId) -> Self {
+    pub fn new(score: f64, gain: f32, identifier: InstanceId) -> Self {
         Self {
             score,
             gain,
@@ -57,14 +61,14 @@ impl RankedInstance {
         }
     }
     pub fn is_relevant(&self) -> bool {
-        self.gain.into_inner() > 0.0
+        self.gain > 0.0
     }
 }
 
 pub struct DatasetVectors<'dataset> {
     _dataset: &'dataset dyn RankingDataset,
     instances: Vec<InstanceId>,
-    gains: Vec<NotNan<f32>>,
+    gains: Vec<f32>,
     qid_to_index: HashMap<&'dataset str, Vec<usize>>,
 }
 
@@ -167,21 +171,20 @@ impl SetEvaluator {
         debug_assert_eq!(vectors.instances.len(), self.dataset.instances().len());
 
         // only deal with generating scores, when vectors are pre-created:
-        let predictions: Vec<NotNan<f64>> = self.dataset.score_all(model);
+        let predictions: Vec<f64> = self.dataset.score_all(model);
         let mut sum = 0.0;
         let mut n = 0;
 
+        let mut ranked_list: Vec<RankedInstance> = Vec::with_capacity(1000);
         for (qid, indices) in vectors.qid_to_index.iter() {
+            ranked_list.clear();
+
             // Predict for every document:
-            let mut ranked_list: Vec<_> = indices
-                .iter()
-                .cloned()
-                .map(|index| {
-                    let score = predictions[index];
-                    let gain = vectors.gains[index];
-                    RankedInstance::new(score, gain, vectors.instances[index])
-                })
-                .collect();
+            for index in indices.into_iter().cloned() {
+                let score = predictions[index];
+                let gain = vectors.gains[index];
+                ranked_list.push(RankedInstance::new(score, gain, vectors.instances[index]));
+            }
             // Sort largest to smallest:
             ranked_list.sort_unstable();
             sum += self.evaluator.score(&qid, &ranked_list);
@@ -229,10 +232,10 @@ impl SetEvaluator {
     pub fn evaluate_to_vec(&self, model: &dyn Model) -> Vec<f64> {
         let mut scores = Vec::new();
 
-        let predictions: Vec<NotNan<f64>> = self.dataset.score_all(model);
+        let predictions: Vec<f64> = self.dataset.score_all(model);
 
         let instances = self.dataset.instances();
-        let gains: Vec<NotNan<f32>> = self.dataset.gains();
+        let gains: Vec<f32> = self.dataset.gains();
         let query_ids: Vec<&str> = self.dataset.query_ids();
 
         let mut qid_to_indices: HashMap<&str, Vec<usize>> = HashMap::with_capacity(query_ids.len());
@@ -276,20 +279,20 @@ impl Evaluator for ReciprocalRank {
     }
 }
 
-pub fn compute_dcg(gains: &[NotNan<f32>], depth: Option<usize>, ideal: bool) -> f64 {
+pub fn compute_dcg(gains: &[f32], depth: Option<usize>, ideal: bool) -> f64 {
     // Gain of 0.0 is a positive value, so we need to expand or contact to "depth" if it's given.
-    let mut gain_vector: Vec<NotNan<f32>> = gains.to_vec();
+    let mut gain_vector: Vec<f32> = gains.to_vec();
     if ideal {
-        gain_vector.sort_unstable();
+        gain_vector.sort_unstable_by(|a, b| a.partial_cmp(b).unwrap());
         gain_vector.reverse();
     }
     if let Some(depth) = depth {
-        gain_vector.resize(depth, NotNan::new(0.0).unwrap());
+        gain_vector.resize(depth, 0.0);
     }
     let mut dcg = 0.0;
     for (i, gain) in gain_vector.into_iter().enumerate() {
         let i = i as f64;
-        let gain = gain.into_inner() as f64;
+        let gain = gain as f64;
         dcg += ((2.0 as f64).powf(gain) - 1.0) / (i + 2.0).log2();
     }
     dcg
@@ -310,12 +313,12 @@ impl NDCG {
 
         for (qid, instance_ids) in dataset.instances_by_query().iter() {
             // Determine the total number of relevant documents:
-            let all_gains: Option<Vec<NotNan<f32>>> = judgments
+            let all_gains: Option<Vec<f32>> = judgments
                 .as_ref()
                 .and_then(|j| j.get(qid))
                 .map(|data| data.gain_vector());
             // Calculate if unavailable in config:
-            let ideal_gains: Vec<NotNan<f32>> = all_gains.unwrap_or_else(|| {
+            let ideal_gains: Vec<f32> = all_gains.unwrap_or_else(|| {
                 instance_ids
                     .iter()
                     .map(|index| dataset.gain(*index))
@@ -324,7 +327,7 @@ impl NDCG {
             // Insert ideal if available:
             query_norms.insert(
                 qid.clone(),
-                if ideal_gains.iter().filter(|g| g.into_inner() > 0.0).count() == 0 {
+                if ideal_gains.iter().cloned().filter(|g| *g > 0.0).count() == 0 {
                     None
                 } else {
                     Some(compute_dcg(&ideal_gains, depth, true))
@@ -348,12 +351,13 @@ impl Evaluator for NDCG {
         }
     }
     fn score(&self, qid: &str, ranked_list: &[RankedInstance]) -> f64 {
-        let actual_gain_vector: Vec<_> = ranked_list.iter().map(|ri| ri.gain).collect();
+        let actual_gain_vector: Vec<f32> = ranked_list.iter().map(|ri| ri.gain).collect();
 
         let normalizer = self.ideal_gains.get(qid).cloned().unwrap_or_else(|| {
             if actual_gain_vector
                 .iter()
-                .filter(|g| g.into_inner() > 0.0)
+                .cloned()
+                .filter(|g| *g > 0.0)
                 .count()
                 == 0
             {
@@ -400,7 +404,7 @@ impl AveragePrecision {
             let num_relevant: u32 = param_num_relevant.unwrap_or_else(|| {
                 instance_ids
                     .iter()
-                    .filter(|index| dataset.gain(**index).into_inner() > 0.0)
+                    .filter(|index| dataset.gain(**index) > 0.0)
                     .count() as u32
             });
 
@@ -472,11 +476,7 @@ pub fn compute_recip_rank(ranked_list: &[RankedInstance]) -> f64 {
 mod tests {
     use super::*;
     fn ri(score: f64, gain: f32, id: usize) -> RankedInstance {
-        RankedInstance::new(
-            NotNan::new(score).unwrap(),
-            NotNan::new(gain).unwrap(),
-            InstanceId::from_index(id),
-        )
+        RankedInstance::new(score, gain, InstanceId::from_index(id))
     }
     #[test]
     fn test_rank_ties() {
@@ -523,10 +523,7 @@ mod tests {
 
     #[test]
     fn test_compute_ndcg() {
-        let data: Vec<NotNan<f32>> = [0.0, 1.0, 1.0, 1.0, 0.0, 0.0]
-            .iter()
-            .map(|v| NotNan::new(*v).unwrap())
-            .collect();
+        let data: Vec<f32> = vec![0.0, 1.0, 1.0, 1.0, 0.0, 0.0];
         let ideal = compute_dcg(&data, None, true);
         let actual = compute_dcg(&data, None, false);
 

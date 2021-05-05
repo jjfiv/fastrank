@@ -2,7 +2,7 @@ use oorandom::Rand64;
 
 /// Sample with replacement.
 pub fn sample_with_replacement<T: Clone>(data: &[T], rand: &mut Rand64, count: usize) -> Vec<T> {
-    let mut output = Vec::new();
+    let mut output = Vec::with_capacity(data.len());
     let n = data.len() as u64;
     for _ in 0..count {
         let idx = rand.rand_range(0..n) as usize;

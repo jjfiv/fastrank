@@ -1,16 +1,15 @@
 use crate::io_helper;
-use ordered_float::NotNan;
 use std::collections::HashMap;
 use std::sync::Arc;
 
 #[derive(Clone, Serialize, Deserialize)]
 pub struct QueryJudgments {
     #[serde(flatten)]
-    docid_to_rel: Arc<HashMap<String, NotNan<f32>>>,
+    docid_to_rel: Arc<HashMap<String, f32>>,
 }
 
 impl QueryJudgments {
-    fn new(data: HashMap<String, NotNan<f32>>) -> Self {
+    fn new(data: HashMap<String, f32>) -> Self {
         Self {
             docid_to_rel: Arc::new(data),
         }
@@ -22,20 +21,18 @@ impl QueryJudgments {
         self.docid_to_rel
             .iter()
             .map(|(_, gain)| gain)
-            .filter(|gain| gain.into_inner() > 0.0)
+            .cloned()
+            .filter(|gain| *gain > 0.0)
             .count() as u32
     }
-    pub fn get_gain(&self, docid: &str) -> NotNan<f32> {
-        *self
-            .docid_to_rel
-            .get(docid)
-            .unwrap_or(&NotNan::new(0.0).unwrap())
+    pub fn get_gain(&self, docid: &str) -> f32 {
+        self.docid_to_rel.get(docid).cloned().unwrap_or(0.0)
     }
-    pub fn gain_vector(&self) -> Vec<NotNan<f32>> {
+    pub fn gain_vector(&self) -> Vec<f32> {
         self.docid_to_rel
             .values()
-            .filter(|g| g.into_inner() > 0.0)
             .cloned()
+            .filter(|g| *g > 0.0)
             .collect()
     }
 }
@@ -68,7 +65,7 @@ pub fn read_file(path: &str) -> Result<QuerySetJudgments, Box<dyn std::error::Er
 
     let mut line = String::new();
     let mut num = 0;
-    let mut output: HashMap<String, HashMap<String, NotNan<f32>>> = HashMap::new();
+    let mut output: HashMap<String, HashMap<String, f32>> = HashMap::new();
 
     loop {
         num += 1;
@@ -83,9 +80,9 @@ pub fn read_file(path: &str) -> Result<QuerySetJudgments, Box<dyn std::error::Er
         let gain = row[3]
             .parse::<f32>()
             .map_err(|_| format!("{}:{}: Invalid relevance judgment {}", path, num, row[3]))?;
-        let gain =
-            NotNan::new(gain).map_err(|_| format!("{}:{}: NaN relevance judgment.", path, num))?;
-
+        if gain.is_nan() {
+            Err(format!("{}:{}: NaN relevance judgment.", path, num))?;
+        }
         output
             .entry(qid)
             .or_insert_with(|| HashMap::new())

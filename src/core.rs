@@ -1,4 +1,3 @@
-use ordered_float::NotNan;
 use std::cmp::Ordering;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
@@ -28,7 +27,7 @@ impl InstanceId {
 
 #[derive(Clone, Debug)]
 pub struct Scored<T: Clone> {
-    pub score: NotNan<f64>,
+    pub score: f64,
     pub item: T,
 }
 impl<T: Clone> Eq for Scored<T> {}
@@ -39,28 +38,23 @@ impl<T: Clone> PartialEq for Scored<T> {
 }
 impl<T: Clone> PartialOrd for Scored<T> {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        Some(self.score.cmp(&other.score))
+        self.score.partial_cmp(&other.score)
     }
 }
 impl<T: Clone> Ord for Scored<T> {
     fn cmp(&self, other: &Self) -> Ordering {
-        self.score.cmp(&other.score)
+        self.score.partial_cmp(&other.score).expect("NaN found!")
     }
 }
 impl<T: Clone> Scored<T> {
     pub fn new(score: f64, item: T) -> Self {
-        Self {
-            score: NotNan::new(score).expect("NaN found!"),
-            item,
-        }
+        Self { score, item }
     }
     pub fn replace_if_better(&mut self, score: f64, item: T) -> bool {
-        if let Ok(score) = NotNan::new(score) {
-            if score > self.score {
-                self.item = item;
-                self.score = score;
-                return true;
-            }
+        if score > self.score {
+            self.item = item;
+            self.score = score;
+            return true;
         }
         false
     }
