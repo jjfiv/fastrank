@@ -378,7 +378,7 @@ fn learn_recursive(
 
     let feature_stats = FeatureStats::compute(dataset).feature_stats;
 
-    let mut candidates: Vec<FeatureSplitCandidate> = dataset
+    let best_candidate: Option<FeatureSplitCandidate> = dataset
         .features()
         .iter()
         .flat_map(|fid| {
@@ -386,11 +386,20 @@ fn learn_recursive(
                 .get(fid)
                 .and_then(|stats| generate_split_candidate(params, *fid, dataset, stats))
         })
-        .collect();
+        .fold(None, |lhs: Option<FeatureSplitCandidate>, rhs| {
+            if let Some(lhs) = lhs {
+                if lhs.importance < rhs.importance {
+                    Some(rhs)
+                } else {
+                    Some(lhs)
+                }
+            } else {
+                Some(rhs)
+            }
+        });
 
-    candidates.sort_unstable_by(|lhs, rhs| lhs.importance.partial_cmp(&rhs.importance).unwrap());
-    if let Some(fsc) = candidates.last() {
-        let (lhs_d, rhs_d) = step.choose_split(dataset, fsc);
+    if let Some(fsc) = best_candidate {
+        let (lhs_d, rhs_d) = step.choose_split(dataset, &fsc);
 
         let left_child = learn_recursive(params, &lhs_d, &step.subset())
             .unwrap_or_else(|_| TreeNode::LeafNode(step.to_output(&lhs_d)));
