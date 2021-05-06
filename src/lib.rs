@@ -13,6 +13,7 @@ pub mod coordinate_ascent;
 pub mod dataset;
 pub mod dense_dataset;
 pub mod evaluators;
+pub mod heap;
 pub mod instance;
 /// Contains code for reading compressed files based on their extension.
 pub mod io_helper;

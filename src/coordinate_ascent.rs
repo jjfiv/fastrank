@@ -1,4 +1,4 @@
-use crate::evaluators::SetEvaluator;
+use crate::evaluators::{Evaluator, SetEvaluator};
 use crate::model::{DenseLinearRankingModel, ModelEnum, WeightedEnsemble};
 use crate::randutil::shuffle;
 use crate::FeatureId;
@@ -39,48 +39,6 @@ impl Default for CoordinateAscentParams {
     }
 }
 
-impl DenseLinearRankingModel {
-    fn new(n_dim: u32) -> Self {
-        Self {
-            weights: vec![0.0; n_dim as usize],
-        }
-    }
-
-    fn reset(&mut self, init_random: bool, rand: &mut Rand64, valid_features: &[FeatureId]) {
-        if init_random {
-            for i in valid_features.iter() {
-                self.weights[i.to_index()] = (rand.rand_float() * 2.0) - 1.0;
-            }
-        } else {
-            self.reset_uniform(valid_features);
-        }
-    }
-
-    fn reset_uniform(&mut self, valid_features: &[FeatureId]) {
-        let n_dim = self.weights.len();
-        // Initialize to even weights:
-        self.weights.clear();
-        assert_eq!(0, self.weights.len());
-        self.weights.resize(n_dim, 0.0);
-        for i in valid_features.iter() {
-            self.weights[i.to_index()] = 1.0 / (valid_features.len() as f64);
-        }
-        assert_eq!(n_dim, self.weights.len());
-    }
-
-    fn l1_normalize(&mut self) {
-        let mut sum = 0.0;
-        for w in self.weights.iter() {
-            sum += f64::abs(*w);
-        }
-        if sum > 0.0 {
-            for w in self.weights.iter_mut() {
-                *w /= sum;
-            }
-        }
-    }
-}
-
 const SIGN: &[i32] = &[0, -1, 1];
 
 fn optimize_inner(
@@ -111,7 +69,7 @@ fn optimize_inner(
     model.reset(params.init_random, &mut rand, &data.features());
 
     // Initialize this local best (within current restart cycle):
-    let start_score = evaluator.fast_eval(&model, &eval_vectors);
+    let start_score = evaluator.fast_eval(&model, &data.query_ids(), &eval_vectors);
     let mut current_best = Scored::new(start_score, model.clone());
 
     loop {
@@ -313,6 +271,6 @@ mod tests {
         let model = params.learn(&train_dataset, &eval);
 
         let ndcg = eval.evaluate_mean(&model);
-        assert_float_eq("ca.ndcg == predefined", ndcg, 0.761162733368733);
+        assert_float_eq("ca.ndcg == predefined", ndcg, 0.7687442119683502);
     }
 }

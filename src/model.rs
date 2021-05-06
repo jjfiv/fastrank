@@ -1,3 +1,5 @@
+use oorandom::Rand64;
+
 use crate::instance::FeatureRead;
 use crate::{FeatureId, Scored};
 use std::cmp;
@@ -46,6 +48,74 @@ pub struct DenseLinearRankingModel {
 impl Model for DenseLinearRankingModel {
     fn score(&self, features: &dyn FeatureRead) -> f64 {
         features.dotp(&self.weights)
+    }
+}
+
+impl DenseLinearRankingModel {
+    pub fn new(n_dim: u32) -> Self {
+        Self {
+            weights: vec![0.0; n_dim as usize],
+        }
+    }
+
+    pub fn zero(&mut self) {
+        for w in self.weights.iter_mut() {
+            *w = 0.0;
+        }
+    }
+
+    pub fn incr(&mut self, other: DenseLinearRankingModel) {
+        assert_eq!(self.weights.len(), other.weights.len());
+        for (w, ow) in self.weights.iter_mut().zip(other.weights.iter()) {
+            *w += ow;
+        }
+    }
+
+    pub fn reset(&mut self, init_random: bool, rand: &mut Rand64, valid_features: &[FeatureId]) {
+        if init_random {
+            for i in valid_features.iter() {
+                self.weights[i.to_index()] = (rand.rand_float() * 2.0) - 1.0;
+            }
+        } else {
+            self.reset_uniform(valid_features);
+        }
+    }
+
+    pub fn reset_uniform(&mut self, valid_features: &[FeatureId]) {
+        let n_dim = self.weights.len();
+        // Initialize to even weights:
+        self.weights.clear();
+        assert_eq!(0, self.weights.len());
+        self.weights.resize(n_dim, 0.0);
+        for i in valid_features.iter() {
+            self.weights[i.to_index()] = 1.0 / (valid_features.len() as f64);
+        }
+        assert_eq!(n_dim, self.weights.len());
+    }
+
+    pub fn max_normalize(&mut self) {
+        let max = self
+            .weights
+            .iter()
+            .map(|w| w.abs())
+            .max_by(|lhs, rhs| lhs.partial_cmp(rhs).unwrap())
+            .unwrap_or(1.0);
+        if max > 0.0 {
+            for w in self.weights.iter_mut() {
+                *w /= max;
+            }
+        }
+    }
+    pub fn l1_normalize(&mut self) {
+        let mut sum = 0.0;
+        for w in self.weights.iter() {
+            sum += f64::abs(*w);
+        }
+        if sum > 0.0 {
+            for w in self.weights.iter_mut() {
+                *w /= sum;
+            }
+        }
     }
 }
 

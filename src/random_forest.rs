@@ -1,7 +1,7 @@
-use crate::cart::*;
 use crate::evaluators::SetEvaluator;
 use crate::model::{ModelEnum, TreeNode, WeightedEnsemble};
 use crate::sampling::DatasetSampling;
+use crate::{cart::*, evaluators::Evaluator};
 use crate::{core::Scored, dataset::DatasetRef};
 use oorandom::Rand64;
 use rayon::prelude::*;

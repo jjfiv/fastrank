@@ -1,11 +1,11 @@
 use crate::dataset::{DatasetRef, RankingDataset};
+use crate::heap::ScoringHeap;
 use crate::model::Model;
 use crate::qrel::QuerySetJudgments;
 use crate::stats::PercentileStats;
 use crate::InstanceId;
 use oorandom::Rand64;
 use std::cmp::Ordering;
-use std::collections::BinaryHeap;
 use std::collections::HashMap;
 use std::sync::Arc;
 
@@ -67,9 +67,9 @@ impl RankedInstance {
 }
 
 pub struct ScoredDV<'a, 'b> {
-    score: f64,
-    index: usize,
-    vectors: &'a DatasetVectors<'b>,
+    pub score: f64,
+    pub index: usize,
+    pub vectors: &'a DatasetVectors<'b>,
 }
 
 impl<'a, 'b> PartialEq for ScoredDV<'a, 'b> {
@@ -111,8 +111,8 @@ pub struct DatasetVectors<'dataset> {
     _dataset: &'dataset dyn RankingDataset,
     pub instances: Vec<InstanceId>,
     pub gains: Vec<f32>,
-    qid_to_index: HashMap<&'dataset str, Vec<usize>>,
-    max_depth: usize,
+    pub qid_to_index: HashMap<&'dataset str, Vec<usize>>,
+    pub max_depth: usize,
 }
 
 impl<'d> DatasetVectors<'d> {
@@ -145,10 +145,6 @@ pub struct SetEvaluator {
 }
 
 impl SetEvaluator {
-    pub fn name(&self) -> String {
-        self.evaluator.name()
-    }
-
     pub fn print_standard_eval(
         split_name: &str,
         model: &dyn Model,
@@ -223,8 +219,8 @@ impl SetEvaluator {
         let mut n = 0;
         let depth = self.evaluator.depth().unwrap_or(vectors.max_depth);
 
-        let mut heap: BinaryHeap<ScoredDV> = BinaryHeap::with_capacity(depth + 1);
-        let mut ranked_list: Vec<RankedInstance> = Vec::with_capacity(depth + 1);
+        let mut heap: ScoringHeap<ScoredDV> = ScoringHeap::new(depth);
+        let mut ranked_list: Vec<RankedInstance> = Vec::with_capacity(depth);
         for (qid, indices) in vectors.qid_to_index.iter() {
             ranked_list.clear();
             heap.clear();
@@ -232,30 +228,24 @@ impl SetEvaluator {
             // Predict for every document:
             for index in indices.into_iter().cloned() {
                 let score = predictions[index];
-                //let gain = vectors.gains[index];
-                if heap.len() < depth || heap.peek().unwrap().score < score {
-                    heap.push(ScoredDV {
-                        score,
-                        index,
-                        vectors,
-                    });
-                    if heap.len() > depth {
-                        heap.pop();
-                    }
-                }
+                heap.offer(ScoredDV {
+                    score,
+                    index,
+                    vectors,
+                });
             }
             // Sort largest to smallest:
-            while heap.len() > 0 {
-                let sdv = heap.pop().unwrap();
-                ranked_list.push(RankedInstance::new(
-                    sdv.score,
-                    vectors.gains[sdv.index],
-                    vectors.instances[sdv.index],
-                ));
-            }
-            ranked_list.reverse();
+            heap.drain_into_mapping(
+                |sdv| {
+                    RankedInstance::new(
+                        sdv.score,
+                        vectors.gains[sdv.index],
+                        vectors.instances[sdv.index],
+                    )
+                },
+                &mut ranked_list,
+            );
             debug_assert!(ranked_list[0] < ranked_list[1]);
-            //ranked_list.extend(heap.drain_sorted());
             sum += self.evaluator.score(&qid, &ranked_list);
             n += 1;
         }
@@ -265,26 +255,48 @@ impl SetEvaluator {
         return sum / (n as f64);
     }
 
-    pub fn fast_eval(&self, model: &dyn Model, vectors: &DatasetVectors<'_>) -> f64 {
+    pub fn fast_eval<'d>(
+        &self,
+        model: &dyn Model,
+        queries: &[&'d str],
+        vectors: &DatasetVectors<'d>,
+    ) -> f64 {
         debug_assert_eq!(vectors.instances.len(), self.dataset.instances().len());
 
-        // only deal with generating scores, when vectors are pre-created:
-        let predictions: Vec<f64> = self.dataset.score_all(model);
         let mut sum = 0.0;
         let mut n = 0;
+        let depth = self.evaluator.depth().unwrap_or(vectors.max_depth);
 
-        let mut ranked_list: Vec<RankedInstance> = Vec::with_capacity(1000);
-        for (qid, indices) in vectors.qid_to_index.iter() {
+        let mut heap: ScoringHeap<ScoredDV> = ScoringHeap::new(depth);
+        let mut ranked_list: Vec<RankedInstance> = Vec::with_capacity(depth);
+        for qid in queries.iter() {
+            let indices = &vectors.qid_to_index[qid];
             ranked_list.clear();
+            heap.clear();
 
             // Predict for every document:
             for index in indices.into_iter().cloned() {
-                let score = predictions[index];
-                let gain = vectors.gains[index];
-                ranked_list.push(RankedInstance::new(score, gain, vectors.instances[index]));
+                let id = vectors.instances[index];
+                let score = self.dataset.score(id, model);
+                //let gain = vectors.gains[index];
+                heap.offer(ScoredDV {
+                    score,
+                    index,
+                    vectors,
+                });
             }
             // Sort largest to smallest:
-            ranked_list.sort_unstable();
+            heap.drain_into_mapping(
+                |sdv| {
+                    RankedInstance::new(
+                        sdv.score,
+                        vectors.gains[sdv.index],
+                        vectors.instances[sdv.index],
+                    )
+                },
+                &mut ranked_list,
+            );
+            debug_assert!(ranked_list[0] < ranked_list[1]);
             sum += self.evaluator.score(&qid, &ranked_list);
             n += 1;
         }
@@ -357,6 +369,20 @@ impl SetEvaluator {
             scores.push(self.evaluator.score(&qid, &ranked_list));
         }
         scores
+    }
+}
+
+impl Evaluator for SetEvaluator {
+    fn name(&self) -> String {
+        self.evaluator.name()
+    }
+
+    fn depth(&self) -> Option<usize> {
+        self.evaluator.depth()
+    }
+
+    fn score(&self, qid: &str, ranked_list: &[RankedInstance]) -> f64 {
+        self.evaluator.score(qid, ranked_list)
     }
 }
 
@@ -567,7 +593,12 @@ impl Evaluator for NDCG {
         if let Some(ideal_dcg) = normalizer {
             // Compute NDCG:
             let actual_dcg = compute_dcg_slice(&actual_gain_vector, self.depth);
-            debug_assert!(actual_dcg <= ideal_dcg);
+            debug_assert!(
+                actual_dcg <= ideal_dcg,
+                "actual {:.3}, ideal {:.3}",
+                actual_dcg,
+                ideal_dcg
+            );
             actual_dcg / ideal_dcg
         } else {
             // If not gains, there's nothing to calculate.
@@ -704,6 +735,29 @@ mod tests {
         assert_eq!(
             vec![4, 3, 1, 2, 5],
             instances
+                .into_iter()
+                .map(|ri| ri.identifier.to_index())
+                .collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn test_rank_ties_heap() {
+        let instances = vec![
+            ri(2.0, 0.0, 4),
+            ri(2.0, 1.0, 3),
+            ri(2.0, 2.0, 1),
+            ri(2.0, 2.0, 2),
+            ri(1.0, 2.0, 5),
+        ];
+        let mut scoring_heap = ScoringHeap::new(3);
+        for inst in instances {
+            scoring_heap.offer(inst);
+        }
+        let output = scoring_heap.into_vec();
+        assert_eq!(
+            vec![4, 3, 1],
+            output
                 .into_iter()
                 .map(|ri| ri.identifier.to_index())
                 .collect::<Vec<_>>()
