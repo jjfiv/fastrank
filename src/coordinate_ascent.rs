@@ -18,6 +18,7 @@ pub struct CoordinateAscentParams {
     pub normalize: bool,
     pub quiet: bool,
     pub init_random: bool,
+    pub init_weights: Option<Vec<f64>>,
     pub output_ensemble: bool,
 }
 
@@ -34,6 +35,7 @@ impl Default for CoordinateAscentParams {
             normalize: true,
             quiet: false,
             init_random: true,
+            init_weights: None,
             output_ensemble: false,
         }
     }
@@ -67,6 +69,11 @@ fn optimize_inner(
     // Initialize to even weights:
     let mut model = DenseLinearRankingModel::new(model_dim);
     model.reset(params.init_random, &mut rand, &data.features());
+    if let Some(weights) = &params.init_weights {
+        for (mw, sw) in model.weights.iter_mut().zip(weights.iter().cloned()) {
+            *mw = sw
+        }
+    }
 
     // Initialize this local best (within current restart cycle):
     let start_score = evaluator.fast_eval(&model, &data.query_ids(), &eval_vectors);
