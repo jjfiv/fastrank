@@ -38,13 +38,50 @@ use model::ModelEnum;
 use qrel::QuerySetJudgments;
 
 use libc::{c_char, c_void};
-use std::ffi::CString;
-use std::ptr;
+use once_cell::sync::Lazy;
 use std::slice;
 use std::{collections::HashMap, error::Error};
+use std::{
+    ffi::CString,
+    sync::{Arc, Mutex},
+};
+use std::{ptr, sync::atomic::AtomicIsize};
 
 mod ffi;
 use ffi::*;
+
+static ERROR_ID: AtomicIsize = AtomicIsize::new(1);
+static ERRORS: Lazy<Arc<Mutex<HashMap<isize, String>>>> =
+    Lazy::new(|| Arc::new(Mutex::new(HashMap::default())));
+
+fn next_error_id() -> isize {
+    ERROR_ID.fetch_add(1, std::sync::atomic::Ordering::SeqCst)
+}
+
+fn store_err<T, E>(r: Result<T, E>, error: *mut isize) -> Result<T, ()>
+where
+    E: std::fmt::Display + Sized,
+{
+    match r {
+        Ok(x) => Ok(x),
+        Err(e) => {
+            let err = next_error_id();
+            ERRORS.as_ref().lock().unwrap().insert(err, e.to_string());
+            unsafe {
+                *error = err;
+            }
+            Err(())
+        }
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn fetch_err(error: isize) -> *const c_void {
+    match ERRORS.as_ref().lock().unwrap().remove(&error) {
+        Some(msg) => return_string(&msg),
+        None => ptr::null(),
+    }
+}
 
 pub struct CDataset {
     /// Reference to Rust-based Dataset.
@@ -105,28 +142,43 @@ pub extern "C" fn free_cqrel(originally_from_rust: *mut CQRel) {
     let _will_drop: Box<CQRel> = unsafe { Box::from_raw(originally_from_rust) };
 }
 
-#[no_mangle]
-pub extern "C" fn load_cqrel(data_path: *const c_void) -> *const CResult {
-    result_to_c(
-        result_load_cqrel(accept_str("data_path", data_path)).map(|actual| CQRel { actual }),
-    )
+fn box_to_ptr<T>(item: T) -> *const T {
+    Box::into_raw(Box::new(item)) as *const T
 }
 
 #[no_mangle]
-pub extern "C" fn cqrel_from_json(json_str: *const c_void) -> *const CResult {
-    result_to_c(
-        deserialize_from_cstr_json::<QuerySetJudgments>(accept_str("json_str", json_str))
-            .map(|actual| CQRel { actual }),
-    )
+pub extern "C" fn load_cqrel(data_path: *const c_void, error: *mut isize) -> *const CQRel {
+    let data_path = accept_str("data_path", data_path);
+    store_err(result_load_cqrel(data_path), error)
+        .map(|actual| CQRel { actual })
+        .map(box_to_ptr)
+        .unwrap_or(ptr::null())
 }
 
 #[no_mangle]
-pub extern "C" fn cqrel_query_json(cqrel: *const CQRel, query_str: *const c_void) -> *const c_void {
+pub extern "C" fn cqrel_from_json(json_str: *const c_void, error: *mut isize) -> *const CQRel {
+    store_err(
+        deserialize_from_cstr_json::<QuerySetJudgments>(accept_str("json_str", json_str)),
+        error,
+    )
+    .map(|actual| CQRel { actual })
+    .map(box_to_ptr)
+    .unwrap_or(ptr::null())
+}
+
+#[no_mangle]
+pub extern "C" fn cqrel_query_json(
+    cqrel: *const CQRel,
+    query_str: *const c_void,
+    error: *mut isize,
+) -> *const c_void {
     let cqrel: Option<&CQRel> = unsafe { (cqrel as *mut CQRel).as_ref() };
-    result_to_json(result_cqrel_query_json(
-        cqrel,
-        accept_str("query_str", query_str),
-    ))
+    store_err(
+        result_cqrel_query_json(cqrel, accept_str("query_str", query_str)),
+        error,
+    )
+    .map(|str| return_string(&str))
+    .unwrap_or(ptr::null())
 }
 
 #[no_mangle]
@@ -191,8 +243,14 @@ pub extern "C" fn dataset_query_json(
 }
 
 #[no_mangle]
-pub extern "C" fn query_json(json_cmd_str: *const c_void) -> *const c_void {
-    result_to_json(result_exec_json(accept_str("query_json_str", json_cmd_str)))
+pub extern "C" fn query_json(json_cmd_str: *const c_void, error: *mut isize) -> *const c_void {
+    match store_err(
+        result_exec_json(accept_str("query_json_str", json_cmd_str)),
+        error,
+    ) {
+        Ok(item) => return_string(&item),
+        Err(_) => ptr::null(),
+    }
 }
 
 fn typed_array(

@@ -227,10 +227,10 @@ pub(crate) fn result_exec_json(
             params: FastRankModelParams::RandomForest(RandomForestParams::default()),
             judgments: None,
         })?,
-        other => serde_json::to_string(&ErrorMessage {
+        other => Err(serde_json::to_string(&ErrorMessage {
             error: "unknown_query_str".to_owned(),
             context: other.to_owned(),
-        })?,
+        })?)?,
     };
 
     Ok(response)

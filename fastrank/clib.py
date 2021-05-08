@@ -7,17 +7,26 @@ import numpy as np
 _MODEL_TYPES = ["SingleFeature", "Linear", "DecisionTree", "Ensemble"]
 
 
-def _handle_rust_str(result) -> str:
+def _handle_rust_str(result) -> Optional[str]:
     """
     This method decodes bytes to UTF-8 and makes a new python string object.
     It then frees the bytes that Rust allocated correctly.
     """
+    if result == ffi.NULL:
+        return None
     try:
         txt = ffi.cast("char*", result)
         txt = ffi.string(txt).decode("utf-8")
         return txt
     finally:
         lib.free_str(result)
+
+
+def _handle_rust_json(result) -> Any:
+    str_response = _handle_rust_str(result)
+    if str_response is None:
+        raise ValueError("Internal Error; expected JSON, got NULL")
+    return json.loads(str_response)
 
 
 def _handle_c_result(c_result):
@@ -73,6 +82,8 @@ class CQRel:
         """
         This constructor is essentially private; it expects a pointer from a CFFI call.
         """
+        self.pointer = None
+        assert pointer != ffi.NULL
         self.pointer = pointer
         self._queries = None
 
@@ -84,13 +95,15 @@ class CQRel:
     @staticmethod
     def load_file(path: str) -> "CQRel":
         """Given a path to a TREC judgments file, load it into memory."""
-        return CQRel(_handle_c_result(lib.load_cqrel(path.encode("utf-8"))))
+        with ErrorCode() as err:
+            return CQRel(lib.load_cqrel(path.encode("utf-8"), err))
 
     @staticmethod
     def from_dict(dictionaries: Dict[str, Dict[str, float]]) -> "CQRel":
         """Given a mapping of (qid -> (doc -> judgment)) pass it over to Rust."""
         input_str = json.dumps(dictionaries).encode("utf-8")
-        return CQRel(_handle_c_result(lib.cqrel_from_json(input_str)))
+        with ErrorCode() as err:
+            return CQRel(lib.cqrel_from_json(input_str, err))
 
     def _require_init(self):
         if self.pointer is None:
@@ -98,13 +111,10 @@ class CQRel:
 
     def _query_json(self, message="queries"):
         self._require_init()
-        response = json.loads(
-            _handle_rust_str(
-                lib.cqrel_query_json(self.pointer, message.encode("utf-8"))
+        with ErrorCode() as err:
+            return _handle_rust_json(
+                lib.cqrel_query_json(self.pointer, message.encode("utf-8"), err)
             )
-        )
-        _maybe_raise_error_json(response)
-        return response
 
     def to_dict(self) -> Dict[str, Dict[str, float]]:
         """Convert this object to a mapping of (qid -> (doc -> judgment)) for use in Python."""
@@ -132,6 +142,8 @@ class CModel:
     """
 
     def __init__(self, pointer, params=None):
+        self.pointer = None
+        assert pointer != ffi.NULL
         self.pointer = pointer
         self.params = params
 
@@ -176,9 +188,7 @@ class CModel:
         Use the model to predict scores for each element of the given dataset.
         Returns a dictionary of instance-index to score.
         """
-        response = json.loads(
-            _handle_rust_str(lib.predict_scores(self.pointer, dataset.pointer))
-        )
+        response = _handle_rust_json(lib.predict_scores(self.pointer, dataset.pointer))
         _maybe_raise_error_json(response)
         return dict((int(k), v) for k, v in response.items())
 
@@ -193,10 +203,8 @@ class CModel:
 
     def _query_json(self, message="to_json"):
         self._require_init()
-        response = json.loads(
-            _handle_rust_str(
-                lib.model_query_json(self.pointer, message.encode("utf-8"))
-            )
+        response = _handle_rust_json(
+            lib.model_query_json(self.pointer, message.encode("utf-8"))
         )
         _maybe_raise_error_json(response)
         return response
@@ -391,10 +399,8 @@ class CDataset:
 
     def _query_json(self, message="num_features"):
         self._require_init()
-        response = json.loads(
-            _handle_rust_str(
-                lib.dataset_query_json(self.pointer, message.encode("utf-8"))
-            )
+        response = _handle_rust_json(
+            lib.dataset_query_json(self.pointer, message.encode("utf-8"))
         )
         _maybe_raise_error_json(response)
         return response
@@ -458,13 +464,13 @@ class CDataset:
             qrel._require_init()
             qrel_pointer = qrel.pointer
 
-        response = json.loads(
-            _handle_rust_str(
-                lib.evaluate_by_query(
-                    model.pointer, self.pointer, qrel_pointer, evaluator.encode("utf-8")
-                )
+        str_response = _handle_rust_str(
+            lib.evaluate_by_query(
+                model.pointer, self.pointer, qrel_pointer, evaluator.encode("utf-8")
             )
         )
+        assert str_response is not None
+        response = json.loads(str_response)
         _maybe_raise_error_json(response)
         return response
 
@@ -496,17 +502,17 @@ class CDataset:
         """
         self._require_init()
         model._require_init()
-        response = json.loads(
-            _handle_rust_str(
-                lib.predict_to_trecrun(
-                    model.pointer,
-                    self.pointer,
-                    output_path.encode("utf-8"),
-                    system_name.encode("utf-8"),
-                    depth,
-                )
+        str_response = _handle_rust_str(
+            lib.predict_to_trecrun(
+                model.pointer,
+                self.pointer,
+                output_path.encode("utf-8"),
+                system_name.encode("utf-8"),
+                depth,
             )
         )
+        assert str_response is not None
+        response = json.loads(str_response)
         _maybe_raise_error_json(response)
         if not quiet:
             print(
@@ -515,6 +521,22 @@ class CDataset:
                 )
             )
         return response
+
+
+class ErrorCode:
+    def __init__(self):
+        self.error = ffi.new("intptr_t *")
+
+    def ptr(self):
+        return self.error
+
+    def __enter__(self):
+        self.error[0] = 0
+        return self.error
+
+    def __exit__(self, ex_type, ex_value, ex_tb):
+        if self.error[0] > 0:
+            raise ValueError(_handle_rust_str(lib.fetch_err(self.error[0])))
 
 
 def query_json(message: str):
@@ -527,8 +549,9 @@ def query_json(message: str):
     Consider this private if you can.
     """
     command = message.encode("utf-8")
-    response = json.loads(_handle_rust_str(lib.query_json(command)))
-    _maybe_raise_error_json(response)
+    with ErrorCode() as ptr:
+        resp = lib.query_json(command, ptr)
+    response = _handle_rust_json(resp)
     return response
 
 
@@ -547,7 +570,6 @@ def evaluate_query(
         encoded_depth = depth
     gains_arr = np.array(gains, dtype="float32")
     scores_arr = np.array(scores, dtype="float64")
-    print(gains_arr, scores_arr)
     measure_c = measure.encode("utf-8")
     opts_c = json.dumps(opts).encode("utf-8")
     float_ptr = ffi.cast(
