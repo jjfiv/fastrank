@@ -1,5 +1,5 @@
 import attr
-from typing import Union, Any, Dict, Optional
+from typing import Union, Any, Dict, Optional, List
 import random
 from .clib import CQRel, query_json
 
@@ -20,6 +20,7 @@ class CoordinateAscentParams:
     output_ensemble = attr.ib(type=bool, default=False)
     seed = attr.ib(type=int, default=random.randint(0, (1 << 64) - 1))
     quiet = attr.ib(type=bool, default=False)
+    init_weights = attr.ib(type=Optional[List[float]], default=None)
 
     def name(self):
         return "CoordinateAscent"

@@ -56,6 +56,16 @@ def test_ca():
     ca.fit(X, y, qid)
     assert ca.score(X, y, qid) > 0.7
 
+def test_ca_resume():
+    ca = CoordinateAscentRanker(measure)
+    ca.params.quiet = True
+    ca.params.seed = RAND
+    ca.fit(X, y, qid)
+    assert ca.score(X, y, qid) > 0.7
+    ca.params.init_weights = ca.weights().tolist()
+    ca.fit(X, y, qid)
+    assert ca.score(X, y, qid) > 0.7
+
 
 def test_sklearn_lr():
     sk = LinearRegression()
