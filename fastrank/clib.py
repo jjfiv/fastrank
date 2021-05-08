@@ -361,9 +361,9 @@ class CDataset:
 
         with ErrorCode() as err:
             child = CDataset(lib.dataset_query_sampling(self.pointer, request, err))
-        # keep those alive if need-be in case they lose the parent!
-        child.numpy_arrays_to_keep = self.numpy_arrays_to_keep
-        return child
+            # keep those alive if need-be in case they lose the parent!
+            child.numpy_arrays_to_keep = self.numpy_arrays_to_keep[:]
+            return child
 
     def subsample_feature_names(self, features: List[str]) -> "CDataset":
         """
@@ -380,11 +380,10 @@ class CDataset:
         )
         fnums = sorted(set(name_to_id[f] for f in features))
         fnums_str = json.dumps(fnums).encode("utf-8")
-        child = CDataset(
-            _handle_c_result(lib.dataset_feature_sampling(self.pointer, fnums_str))
-        )
-        child.numpy_arrays_to_keep = self.numpy_arrays_to_keep
-        return child
+        with ErrorCode() as err:
+            child = CDataset(lib.dataset_feature_sampling(self.pointer, fnums_str, err))
+            child.numpy_arrays_to_keep = self.numpy_arrays_to_keep[:]
+            return child
 
     def train_model(
         self,
@@ -401,10 +400,10 @@ class CDataset:
 
     def _query_json(self, message="num_features"):
         self._require_init()
-        response = _handle_rust_json(
-            lib.dataset_query_json(self.pointer, message.encode("utf-8"))
-        )
-        _maybe_raise_error_json(response)
+        with ErrorCode() as err:
+            response = _handle_rust_json(
+                lib.dataset_query_json(self.pointer, message.encode("utf-8"), err)
+            )
         return response
 
     def is_sampled(self) -> bool:

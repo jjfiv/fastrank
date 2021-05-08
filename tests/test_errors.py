@@ -55,8 +55,21 @@ def test_bad_training():
         model._require_init()
 
 
-def test_bad_sampling():
+def test_bad_qsampling():
     dataset = CDataset.open_ranksvm("examples/trec_news_2018.train")
     with pytest.raises(ValueError):
         child = dataset.subsample_queries(["NOT_REAL"])
         child._require_init()
+
+
+def test_bad_fsampling():
+    dataset = CDataset.open_ranksvm("examples/trec_news_2018.train")
+    with pytest.raises(KeyError):
+        child = dataset.subsample_feature_names(["MISSING"])
+        child._require_init()
+
+
+def test_bad_dataset_query():
+    dataset = CDataset.open_ranksvm("examples/trec_news_2018.train")
+    with pytest.raises(ValueError):
+        dataset._query_json("MISSING")

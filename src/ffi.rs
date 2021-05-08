@@ -174,10 +174,7 @@ pub(crate) fn result_dataset_query_json(
                 .collect::<Vec<_>>();
             serde_json::to_string(&names)?
         }
-        other => serde_json::to_string(&ErrorMessage {
-            error: "unknown_dataset_query_str".to_owned(),
-            context: other.to_owned(),
-        })?,
+        other => Err(format!("unknown_dataset_query_str: {:?}", other))?,
     };
 
     Ok(response)

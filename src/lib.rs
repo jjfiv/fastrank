@@ -75,6 +75,13 @@ where
     }
 }
 
+fn store_err_to_ptr<T, E>(r: Result<T, E>, error: *mut isize) -> *const T
+where
+    E: std::fmt::Display + Sized,
+{
+    store_err(r, error).map(box_to_ptr).unwrap_or(ptr::null())
+}
+
 #[no_mangle]
 pub extern "C" fn fetch_err(error: isize) -> *const c_void {
     match ERRORS.as_ref().lock().unwrap().remove(&error) {
@@ -149,21 +156,19 @@ fn box_to_ptr<T>(item: T) -> *const T {
 #[no_mangle]
 pub extern "C" fn load_cqrel(data_path: *const c_void, error: *mut isize) -> *const CQRel {
     let data_path = accept_str("data_path", data_path);
-    store_err(result_load_cqrel(data_path), error)
-        .map(|actual| CQRel { actual })
-        .map(box_to_ptr)
-        .unwrap_or(ptr::null())
+    store_err_to_ptr(
+        result_load_cqrel(data_path).map(|actual| CQRel { actual }),
+        error,
+    )
 }
 
 #[no_mangle]
 pub extern "C" fn cqrel_from_json(json_str: *const c_void, error: *mut isize) -> *const CQRel {
-    store_err(
-        deserialize_from_cstr_json::<QuerySetJudgments>(accept_str("json_str", json_str)),
+    store_err_to_ptr(
+        deserialize_from_cstr_json::<QuerySetJudgments>(accept_str("json_str", json_str))
+            .map(|actual| CQRel { actual }),
         error,
     )
-    .map(|actual| CQRel { actual })
-    .map(box_to_ptr)
-    .unwrap_or(ptr::null())
 }
 
 #[no_mangle]
@@ -193,15 +198,12 @@ pub extern "C" fn load_ranksvm_format(
     } else {
         Some(accept_str("feature_names_path", feature_names_path))
     };
-    store_err(
-        result_load_ranksvm_format(data_path, feature_names_path),
+    store_err_to_ptr(
+        result_load_ranksvm_format(data_path, feature_names_path).map(|response| CDataset {
+            reference: response,
+        }),
         error,
     )
-    .map(|response| CDataset {
-        reference: response,
-    })
-    .map(box_to_ptr)
-    .unwrap_or(ptr::null())
 }
 
 #[no_mangle]
@@ -211,24 +213,23 @@ pub extern "C" fn dataset_query_sampling(
     error: *mut isize,
 ) -> *const CDataset {
     let dataset: Option<&CDataset> = unsafe { (dataset as *mut CDataset).as_ref() };
-    store_err(
-        result_dataset_query_sampling(dataset, accept_str("queries_json_list", queries_json_list)),
+    store_err_to_ptr(
+        result_dataset_query_sampling(dataset, accept_str("queries_json_list", queries_json_list))
+            .map(|response| CDataset {
+                reference: response,
+            }),
         error,
     )
-    .map(|response| CDataset {
-        reference: response,
-    })
-    .map(box_to_ptr)
-    .unwrap_or(ptr::null())
 }
 
 #[no_mangle]
 pub extern "C" fn dataset_feature_sampling(
     dataset: *mut CDataset,
     feature_json_list: *const c_void,
-) -> *const CResult {
+    error: *mut isize,
+) -> *const CDataset {
     let dataset: Option<&CDataset> = unsafe { (dataset as *mut CDataset).as_ref() };
-    result_to_c(
+    store_err_to_ptr(
         result_dataset_feature_sampling(
             dataset,
             accept_str("feature_json_list", feature_json_list),
@@ -236,6 +237,7 @@ pub extern "C" fn dataset_feature_sampling(
         .map(|response| CDataset {
             reference: response,
         }),
+        error,
     )
 }
 
@@ -243,12 +245,15 @@ pub extern "C" fn dataset_feature_sampling(
 pub extern "C" fn dataset_query_json(
     dataset: *mut c_void,
     json_cmd_str: *mut c_void,
+    error: *mut isize,
 ) -> *const c_void {
     let dataset: Option<&CDataset> = unsafe { (dataset as *mut CDataset).as_ref() };
-    result_to_json(result_dataset_query_json(
-        dataset,
-        accept_str("dataset_query_json", json_cmd_str),
-    ))
+    store_err(
+        result_dataset_query_json(dataset, accept_str("dataset_query_json", json_cmd_str)),
+        error,
+    )
+    .map(|str| return_string(&str))
+    .unwrap_or(ptr::null())
 }
 
 #[no_mangle]
