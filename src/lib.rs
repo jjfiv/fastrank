@@ -103,21 +103,6 @@ pub struct CQRel {
     actual: QuerySetJudgments,
 }
 
-#[repr(C)]
-pub struct CResult {
-    pub error_message: *const c_void,
-    pub success: *const c_void,
-}
-
-impl Default for CResult {
-    fn default() -> Self {
-        CResult {
-            error_message: ptr::null(),
-            success: ptr::null(),
-        }
-    }
-}
-
 #[no_mangle]
 pub extern "C" fn free_str(originally_from_rust: *mut c_void) {
     let _will_drop: CString = unsafe { CString::from_raw(originally_from_rust as *mut c_char) };
@@ -126,12 +111,6 @@ pub extern "C" fn free_str(originally_from_rust: *mut c_void) {
 #[no_mangle]
 pub extern "C" fn free_f64(originally_from_rust: *mut c_void) {
     let _will_drop: Box<f64> = unsafe { Box::from_raw(originally_from_rust as *mut f64) };
-}
-
-/// Note: not-recursive. Free Error Message Manually!
-#[no_mangle]
-pub extern "C" fn free_c_result(originally_from_rust: *mut CResult) {
-    let _will_drop: Box<CResult> = unsafe { Box::from_raw(originally_from_rust) };
 }
 
 #[no_mangle]
@@ -300,46 +279,25 @@ pub extern "C" fn make_dense_dataset_v2(
     qids: *const c_void,
     qids_type: *const c_void,
     qid_strs: *const c_void,
-) -> *const CResult {
+    error: *mut isize,
+) -> *const CDataset {
     let x_len = n * d;
-    result_to_c((|| {
-        let xs = typed_array("xs", x, x_len, x_type)?;
-        let y = typed_array("y", y, n, y_type)?;
-        let qids = typed_array("qids", qids, n, qids_type)?;
-        let qid_strs: Option<HashMap<i64, String>> = if qid_strs.is_null() {
-            None
-        } else {
-            Some(serde_json::from_str(accept_str("qid_strs", qid_strs)?)?)
-        };
-        let dataset = DenseDataset::try_new(n, d, xs, y, qids, qid_strs)?;
-        Ok(dataset.into_ref())
-    })())
-}
-
-#[no_mangle]
-pub extern "C" fn make_dense_dataset_f32_f64_i64(
-    n: usize,
-    d: usize,
-    x: *const f32,
-    y: *const f64,
-    qids: *const i64,
-) -> *const CResult {
-    let x_len = n * d;
-    let x_slice: &'static [f32] = unsafe { slice::from_raw_parts(x, x_len) };
-    let y_slice: &'static [f64] = unsafe { slice::from_raw_parts(y, n) };
-    let qid_slice: &'static [i64] = unsafe { slice::from_raw_parts(qids, n) };
-    result_to_c(
-        DenseDataset::try_new(
-            n,
-            d,
-            TypedArrayRef::DenseF32(x_slice),
-            TypedArrayRef::DenseF64(y_slice),
-            TypedArrayRef::DenseI64(qid_slice),
-            None,
-        )
-        .map(|dd| CDataset {
-            reference: dd.into_ref(),
-        }),
+    store_err_to_ptr::<_, Box<dyn Error>>(
+        (|| {
+            let xs = typed_array("xs", x, x_len, x_type)?;
+            let y = typed_array("y", y, n, y_type)?;
+            let qids = typed_array("qids", qids, n, qids_type)?;
+            let qid_strs: Option<HashMap<i64, String>> = if qid_strs.is_null() {
+                None
+            } else {
+                Some(serde_json::from_str(accept_str("qid_strs", qid_strs)?)?)
+            };
+            let dataset = DenseDataset::try_new(n, d, xs, y, qids, qid_strs)?;
+            Ok(CDataset {
+                reference: dataset.into_ref(),
+            })
+        })(),
+        error,
     )
 }
 
@@ -351,19 +309,23 @@ pub extern "C" fn evaluate_query(
     scores: *const f64,
     depth: i64,
     opts: *const c_void,
-) -> *const CResult {
-    result_to_c((|| {
-        let measure = accept_str("measure", measure)?;
-        let gains = unsafe { slice::from_raw_parts(gains, n) };
-        let scores = unsafe { slice::from_raw_parts(scores, n) };
-        let depth = if depth <= 0 {
-            None
-        } else {
-            Some(depth as usize)
-        };
-        let opts = serde_json::from_str(accept_str("options_json", opts)?)?;
-        json_api::evaluate_query(measure, gains, scores, depth, &opts)
-    })())
+    error: *mut isize,
+) -> *const f64 {
+    store_err_to_ptr(
+        (|| {
+            let measure = accept_str("measure", measure)?;
+            let gains = unsafe { slice::from_raw_parts(gains, n) };
+            let scores = unsafe { slice::from_raw_parts(scores, n) };
+            let depth = if depth <= 0 {
+                None
+            } else {
+                Some(depth as usize)
+            };
+            let opts = serde_json::from_str(accept_str("options_json", opts)?)?;
+            json_api::evaluate_query(measure, gains, scores, depth, &opts)
+        })(),
+        error,
+    )
 }
 
 #[no_mangle]
@@ -396,12 +358,15 @@ pub extern "C" fn model_from_json(json_str: *const c_void, error: *mut isize) ->
 pub extern "C" fn model_query_json(
     model: *const c_void,
     json_cmd_str: *const c_void,
+    error: *mut isize,
 ) -> *const c_void {
     let model: Option<&CModel> = unsafe { (model as *const CModel).as_ref() };
-    result_to_json(result_model_query_json(
-        model,
-        accept_str("query_json", json_cmd_str),
-    ))
+    store_err(
+        result_model_query_json(model, accept_str("query_json", json_cmd_str)),
+        error,
+    )
+    .map(|s| return_string(&s))
+    .unwrap_or(ptr::null())
 }
 
 /// returns json of qid->score for evaluator; or error-json.

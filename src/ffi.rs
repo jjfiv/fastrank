@@ -17,7 +17,7 @@ use crate::random_forest::RandomForestParams;
 use crate::sampling::DatasetSampling;
 use crate::FeatureId;
 
-use crate::{CDataset, CModel, CQRel, CResult};
+use crate::{CDataset, CModel, CQRel};
 
 /// This is a JSON-API, not a C-API, really.
 #[derive(Serialize, Deserialize)]
@@ -53,25 +53,6 @@ pub(crate) fn result_to_json(rust_result: Result<String, Box<dyn Error>>) -> *co
         .expect("Error serialization should succeed."),
     };
     return_string(&output)
-}
-
-pub(crate) fn result_to_c<T>(rust_result: Result<T, Box<dyn Error>>) -> *const CResult {
-    let mut c_result = Box::new(CResult::default());
-    match rust_result {
-        Ok(item) => {
-            let output = Box::new(item);
-            c_result.success = Box::into_raw(output) as *const c_void;
-        }
-        Err(e) => {
-            let error_message = serde_json::to_string(&ErrorMessage {
-                error: "error".to_string(),
-                context: format!("{:?}", e),
-            })
-            .unwrap();
-            c_result.error_message = return_string(&error_message);
-        }
-    };
-    Box::into_raw(c_result)
 }
 
 pub(crate) fn deserialize_from_cstr_json<'a, T: serde::Deserialize<'a>>(
@@ -199,15 +180,10 @@ pub(crate) fn result_model_query_json(
         Some(d) => d,
         None => Err("Model pointer is null!")?,
     };
-    let response = match query_str? {
-        "to_json" => serde_json::to_string(&model.actual)?,
-        other => serde_json::to_string(&ErrorMessage {
-            error: "unknown_dataset_query_str".to_owned(),
-            context: other.to_owned(),
-        })?,
-    };
-
-    Ok(response)
+    match query_str? {
+        "to_json" => Ok(serde_json::to_string(&model.actual)?),
+        other => Err(format!("unknown_dataset_query_str {}", other))?,
+    }
 }
 
 pub(crate) fn result_exec_json(

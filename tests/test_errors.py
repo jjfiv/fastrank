@@ -1,5 +1,5 @@
 from fastrank import clib
-from fastrank.clib import CDataset, CQRel, CModel
+from fastrank.clib import CDataset, CQRel, CModel, evaluate_query
 import pytest
 
 
@@ -73,3 +73,18 @@ def test_bad_dataset_query():
     dataset = CDataset.open_ranksvm("examples/trec_news_2018.train")
     with pytest.raises(ValueError):
         dataset._query_json("MISSING")
+
+
+def test_evaluate_fake_measure():
+    gains = [1, 1, 0, 0]
+    scores = [0.9, 0.8, 0.7, 0.6]
+    with pytest.raises(ValueError):
+        num = evaluate_query("FAKE", gains, scores)
+        print(num)
+
+
+def test_query_model():
+    model = CModel.from_dict({"Linear": {"weights": [0.1, 0.9]}})
+    model._require_init()
+    with pytest.raises(ValueError):
+        print(model._query_json("FAKE"))

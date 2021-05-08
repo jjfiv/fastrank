@@ -201,13 +201,12 @@ class CModel:
         if self.pointer is None:
             raise ValueError("CModel is null!")
 
-    def _query_json(self, message="to_json"):
+    def _query_json(self, message="to_json") -> Any:
         self._require_init()
-        response = _handle_rust_json(
-            lib.model_query_json(self.pointer, message.encode("utf-8"))
-        )
-        _maybe_raise_error_json(response)
-        return response
+        with ErrorCode() as err:
+            return _handle_rust_json(
+                lib.model_query_json(self.pointer, message.encode("utf-8"), err)
+            )
 
     def to_dict(self):
         """Turn the opaque Rust model pointer into inspectable JSON structure. This ties nicely to `from_dict`.
@@ -318,8 +317,8 @@ class CDataset:
         qid_str_json = json.dumps(qid_strs).encode("utf-8") if qid_strs else ffi.NULL
 
         # Pass pointers to these arrays to Rust!
-        dataset = CDataset(
-            _handle_c_result(
+        with ErrorCode() as err:
+            dataset = CDataset(
                 lib.make_dense_dataset_v2(
                     N,
                     D,
@@ -330,11 +329,11 @@ class CDataset:
                     ffi.cast("void *", qid_nums.ctypes.data),
                     str(qid_nums.dtype).encode("utf-8"),
                     qid_str_json,
+                    err,
                 )
             )
-        )
-        dataset.numpy_arrays_to_keep = numpy_arrays_to_keep
-        return dataset
+            dataset.numpy_arrays_to_keep = numpy_arrays_to_keep
+            return dataset
 
     def _require_init(self):
         if self.pointer is None:
@@ -573,9 +572,9 @@ def evaluate_query(
     scores_arr = np.array(scores, dtype="float64")
     measure_c = measure.encode("utf-8")
     opts_c = json.dumps(opts).encode("utf-8")
-    float_ptr = ffi.cast(
-        "double*",
-        _handle_c_result(
+    with ErrorCode() as err:
+        float_ptr = ffi.cast(
+            "double*",
             lib.evaluate_query(
                 measure_c,
                 n,
@@ -583,9 +582,10 @@ def evaluate_query(
                 ffi.cast("double*", scores_arr.ctypes.data),
                 encoded_depth,
                 opts_c,
-            )
-        ),
-    )
-    number = float_ptr[0]
-    lib.free_f64(float_ptr)
-    return number
+                err,
+            ),
+        )
+        assert float_ptr != ffi.NULL
+        number = float_ptr[0]
+        lib.free_f64(float_ptr)
+        return number
