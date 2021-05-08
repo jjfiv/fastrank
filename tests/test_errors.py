@@ -1,5 +1,5 @@
 from fastrank import clib
-from fastrank.clib import CQRel
+from fastrank.clib import CDataset, CQRel, CModel
 import pytest
 
 
@@ -22,6 +22,41 @@ def test_not_qrel_json():
 
 
 def test_qrel_missing_query():
+    qrel = CQRel.load_file("examples/newsir18-entity.qrel")
     with pytest.raises(ValueError):
-        qrel = CQRel.load_file("examples/newsir18-entity.qrel")
         print(qrel._query_json("MISSING_QUERY"))
+
+
+def test_import_model():
+    with pytest.raises(ValueError):
+        model = CModel.from_dict({"Linear": "JK"})
+        model._require_init()
+
+
+def test_import_model_ok():
+    model = CModel.from_dict({"Linear": {"weights": [0.1, 0.9]}})
+    model._require_init()
+
+
+def test_bad_model_kind():
+    with pytest.raises(AssertionError):
+        model = CModel.from_dict({"LOL": "JK"})
+        model._require_init()
+
+
+def test_bad_training():
+    class FakeTrainReq:
+        def to_dict(self):
+            return {"what": "Not Good"}
+
+    dataset = CDataset.open_ranksvm("examples/trec_news_2018.train")
+    with pytest.raises(ValueError):
+        model = dataset.train_model(FakeTrainReq())
+        model._require_init()
+
+
+def test_bad_sampling():
+    dataset = CDataset.open_ranksvm("examples/trec_news_2018.train")
+    with pytest.raises(ValueError):
+        child = dataset.subsample_queries(["NOT_REAL"])
+        child._require_init()

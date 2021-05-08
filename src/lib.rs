@@ -185,32 +185,41 @@ pub extern "C" fn cqrel_query_json(
 pub extern "C" fn load_ranksvm_format(
     data_path: *mut c_void,
     feature_names_path: *mut c_void,
-) -> *const CResult {
+    error: *mut isize,
+) -> *const CDataset {
     let data_path = accept_str("data_path", data_path);
     let feature_names_path: Option<Result<&str, Box<dyn Error>>> = if feature_names_path.is_null() {
         None
     } else {
         Some(accept_str("feature_names_path", feature_names_path))
     };
-    result_to_c(
-        result_load_ranksvm_format(data_path, feature_names_path).map(|response| CDataset {
-            reference: response,
-        }),
+    store_err(
+        result_load_ranksvm_format(data_path, feature_names_path),
+        error,
     )
+    .map(|response| CDataset {
+        reference: response,
+    })
+    .map(box_to_ptr)
+    .unwrap_or(ptr::null())
 }
 
 #[no_mangle]
 pub extern "C" fn dataset_query_sampling(
     dataset: *mut CDataset,
     queries_json_list: *const c_void,
-) -> *const CResult {
+    error: *mut isize,
+) -> *const CDataset {
     let dataset: Option<&CDataset> = unsafe { (dataset as *mut CDataset).as_ref() };
-    result_to_c(
-        result_dataset_query_sampling(dataset, accept_str("queries_json_list", queries_json_list))
-            .map(|response| CDataset {
-                reference: response,
-            }),
+    store_err(
+        result_dataset_query_sampling(dataset, accept_str("queries_json_list", queries_json_list)),
+        error,
     )
+    .map(|response| CDataset {
+        reference: response,
+    })
+    .map(box_to_ptr)
+    .unwrap_or(ptr::null())
 }
 
 #[no_mangle]
@@ -356,19 +365,26 @@ pub extern "C" fn evaluate_query(
 pub extern "C" fn train_model(
     train_request_json: *mut c_void,
     dataset: *mut c_void,
-) -> *const CResult {
+    error: *mut isize,
+) -> *const CModel {
     let dataset: Option<&CDataset> = unsafe { (dataset as *mut CDataset).as_ref() };
     let request: Result<TrainRequest, _> =
         deserialize_from_cstr_json(accept_str("train_request_json", train_request_json));
-    result_to_c(result_train_model(request, dataset).map(|actual| CModel { actual }))
+    store_err(result_train_model(request, dataset), error)
+        .map(|actual| CModel { actual })
+        .map(box_to_ptr)
+        .unwrap_or(ptr::null())
 }
 
 #[no_mangle]
-pub extern "C" fn model_from_json(json_str: *const c_void) -> *const CResult {
-    result_to_c(
-        deserialize_from_cstr_json::<ModelEnum>(accept_str("json_str", json_str))
-            .map(|actual| CModel { actual }),
+pub extern "C" fn model_from_json(json_str: *const c_void, error: *mut isize) -> *const CModel {
+    store_err(
+        deserialize_from_cstr_json::<ModelEnum>(accept_str("json_str", json_str)),
+        error,
     )
+    .map(|actual| CModel { actual })
+    .map(box_to_ptr)
+    .unwrap_or(ptr::null())
 }
 
 #[no_mangle]

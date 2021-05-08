@@ -159,10 +159,10 @@ class CModel:
 
         >>> model = CModel.from_dict(json.load("saved_model.json"))
         """
-        # TODO: recursively check for NaN and crash!
         CModel._check_model_json(model_json)
         json_str = json.dumps(model_json).encode("utf-8")
-        return CModel(_handle_c_result(lib.model_from_json(json_str)))
+        with ErrorCode() as err:
+            return CModel(lib.model_from_json(json_str, err))
 
     def predict_dense_scores(
         self, dataset: "CDataset", missing: float = float("nan")
@@ -233,6 +233,7 @@ class CDataset:
     """
 
     def __init__(self, pointer=None):
+        assert pointer != ffi.NULL
         self.pointer = pointer
         # need to hold onto any numpy arrays...
         self.numpy_arrays_to_keep = []
@@ -258,9 +259,8 @@ class CDataset:
             feature_names_path = feature_names_path.encode("utf-8")
         else:
             feature_names_path = ffi.NULL
-        return CDataset(
-            _handle_c_result(lib.load_ranksvm_format(data_path, feature_names_path))
-        )
+        with ErrorCode() as err:
+            return CDataset(lib.load_ranksvm_format(data_path, feature_names_path, err))
 
     @staticmethod
     def from_numpy(
@@ -357,13 +357,12 @@ class CDataset:
                         q, actual_queries
                     )
                 )
-        child = CDataset()
+        request = json.dumps(queries).encode("utf-8")
+
+        with ErrorCode() as err:
+            child = CDataset(lib.dataset_query_sampling(self.pointer, request, err))
         # keep those alive if need-be in case they lose the parent!
         child.numpy_arrays_to_keep = self.numpy_arrays_to_keep
-        request = json.dumps(queries).encode("utf-8")
-        child.pointer = _handle_c_result(
-            lib.dataset_query_sampling(self.pointer, request)
-        )
         return child
 
     def subsample_feature_names(self, features: List[str]) -> "CDataset":
@@ -387,15 +386,18 @@ class CDataset:
         child.numpy_arrays_to_keep = self.numpy_arrays_to_keep
         return child
 
-    def train_model(self, train_req: "fastrank.training.TrainRequest") -> CModel:
+    def train_model(
+        self,
+        train_req: "fastrank.training.TrainRequest",  # type:ignore
+    ) -> CModel:
         """
         Train a Model on this Dataset.
         """
         self._require_init()
         train_req_str = json.dumps(train_req.to_dict()).encode("utf-8")
-        # with sys_pipes():
-        train_resp = _handle_c_result(lib.train_model(train_req_str, self.pointer))
-        return CModel(train_resp, train_req)
+        with ErrorCode() as err:
+            train_resp = lib.train_model(train_req_str, self.pointer, err)
+            return CModel(train_resp, train_req)
 
     def _query_json(self, message="num_features"):
         self._require_init()
