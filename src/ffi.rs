@@ -1,8 +1,9 @@
 use libc::{c_char, c_void};
+use once_cell::sync::Lazy;
 use serde_json;
-use std::error::Error;
-use std::ffi::CStr;
-use std::ffi::CString;
+use std::{collections::HashMap, ffi::CString, ptr, sync::Arc};
+use std::{error::Error, sync::atomic::AtomicIsize};
+use std::{ffi::CStr, sync::Mutex};
 
 use crate::coordinate_ascent::CoordinateAscentParams;
 use crate::dataset;
@@ -19,6 +20,41 @@ use crate::FeatureId;
 
 use crate::{CDataset, CModel, CQRel};
 
+pub(crate) static ERROR_ID: AtomicIsize = AtomicIsize::new(1);
+pub(crate) static ERRORS: Lazy<Arc<Mutex<HashMap<isize, String>>>> =
+    Lazy::new(|| Arc::new(Mutex::new(HashMap::default())));
+
+pub(crate) fn next_error_id() -> isize {
+    ERROR_ID.fetch_add(1, std::sync::atomic::Ordering::SeqCst)
+}
+
+pub(crate) fn store_err<T, E>(r: Result<T, E>, error: *mut isize) -> Result<T, ()>
+where
+    E: std::fmt::Display + Sized,
+{
+    match r {
+        Ok(x) => Ok(x),
+        Err(e) => {
+            let err = next_error_id();
+            ERRORS.as_ref().lock().unwrap().insert(err, e.to_string());
+            unsafe {
+                *error = err;
+            }
+            Err(())
+        }
+    }
+}
+
+pub(crate) fn box_to_ptr<T>(item: T) -> *const T {
+    Box::into_raw(Box::new(item)) as *const T
+}
+
+pub(crate) fn store_err_to_ptr<T, E>(r: Result<T, E>, error: *mut isize) -> *const T
+where
+    E: std::fmt::Display + Sized,
+{
+    store_err(r, error).map(box_to_ptr).unwrap_or(ptr::null())
+}
 /// This is a JSON-API, not a C-API, really.
 #[derive(Serialize, Deserialize)]
 struct ErrorMessage {
@@ -43,16 +79,13 @@ pub(crate) fn return_string(output: &str) -> *const c_void {
     CString::into_raw(c_output) as *const c_void
 }
 
-pub(crate) fn result_to_json(rust_result: Result<String, Box<dyn Error>>) -> *const c_void {
-    let output = match rust_result {
-        Ok(response) => response,
-        Err(e) => serde_json::to_string(&ErrorMessage {
-            error: "error".to_string(),
-            context: format!("{:?}", e),
-        })
-        .expect("Error serialization should succeed."),
-    };
-    return_string(&output)
+pub(crate) fn result_to_json(
+    rust_result: Result<String, Box<dyn Error>>,
+    error: *mut isize,
+) -> *const c_void {
+    store_err(rust_result, error)
+        .map(|s| return_string(&s))
+        .unwrap_or(ptr::null())
 }
 
 pub(crate) fn deserialize_from_cstr_json<'a, T: serde::Deserialize<'a>>(

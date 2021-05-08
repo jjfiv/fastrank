@@ -38,49 +38,13 @@ use model::ModelEnum;
 use qrel::QuerySetJudgments;
 
 use libc::{c_char, c_void};
-use once_cell::sync::Lazy;
+use std::ffi::CString;
+use std::ptr;
 use std::slice;
 use std::{collections::HashMap, error::Error};
-use std::{
-    ffi::CString,
-    sync::{Arc, Mutex},
-};
-use std::{ptr, sync::atomic::AtomicIsize};
 
 mod ffi;
 use ffi::*;
-
-static ERROR_ID: AtomicIsize = AtomicIsize::new(1);
-static ERRORS: Lazy<Arc<Mutex<HashMap<isize, String>>>> =
-    Lazy::new(|| Arc::new(Mutex::new(HashMap::default())));
-
-fn next_error_id() -> isize {
-    ERROR_ID.fetch_add(1, std::sync::atomic::Ordering::SeqCst)
-}
-
-fn store_err<T, E>(r: Result<T, E>, error: *mut isize) -> Result<T, ()>
-where
-    E: std::fmt::Display + Sized,
-{
-    match r {
-        Ok(x) => Ok(x),
-        Err(e) => {
-            let err = next_error_id();
-            ERRORS.as_ref().lock().unwrap().insert(err, e.to_string());
-            unsafe {
-                *error = err;
-            }
-            Err(())
-        }
-    }
-}
-
-fn store_err_to_ptr<T, E>(r: Result<T, E>, error: *mut isize) -> *const T
-where
-    E: std::fmt::Display + Sized,
-{
-    store_err(r, error).map(box_to_ptr).unwrap_or(ptr::null())
-}
 
 #[no_mangle]
 pub extern "C" fn fetch_err(error: isize) -> *const c_void {
@@ -126,10 +90,6 @@ pub extern "C" fn free_model(originally_from_rust: *mut CModel) {
 #[no_mangle]
 pub extern "C" fn free_cqrel(originally_from_rust: *mut CQRel) {
     let _will_drop: Box<CQRel> = unsafe { Box::from_raw(originally_from_rust) };
-}
-
-fn box_to_ptr<T>(item: T) -> *const T {
-    Box::into_raw(Box::new(item)) as *const T
 }
 
 #[no_mangle]
@@ -376,19 +336,27 @@ pub extern "C" fn evaluate_by_query(
     dataset: *const CDataset,
     qrel: *const CQRel,
     evaluator: *const c_void,
+    error: *mut isize,
 ) -> *const c_void {
     let model: Option<&CModel> = unsafe { (model as *const CModel).as_ref() };
     let dataset: Option<&CDataset> = unsafe { (dataset as *const CDataset).as_ref() };
     let qrel: Option<&CQRel> = unsafe { (qrel as *const CQRel).as_ref() };
     let evaluator: Result<&str, Box<dyn Error>> = accept_str("evaluator_name", evaluator);
-    result_to_json(result_evaluate_by_query(model, dataset, qrel, evaluator))
+    result_to_json(
+        result_evaluate_by_query(model, dataset, qrel, evaluator),
+        error,
+    )
 }
 
 #[no_mangle]
-pub extern "C" fn predict_scores(model: *const CModel, dataset: *const CDataset) -> *const c_void {
+pub extern "C" fn predict_scores(
+    model: *const CModel,
+    dataset: *const CDataset,
+    error: *mut isize,
+) -> *const c_void {
     let model: Option<&CModel> = unsafe { (model as *const CModel).as_ref() };
     let dataset: Option<&CDataset> = unsafe { (dataset as *const CDataset).as_ref() };
-    result_to_json(result_predict_scores(model, dataset))
+    result_to_json(result_predict_scores(model, dataset), error)
 }
 
 #[no_mangle]
@@ -398,16 +366,14 @@ pub extern "C" fn predict_to_trecrun(
     output_path: *const c_void,
     system_name: *const c_void,
     depth: usize,
+    error: *mut isize,
 ) -> *const c_void {
     let model: Option<&CModel> = unsafe { (model as *const CModel).as_ref() };
     let dataset: Option<&CDataset> = unsafe { (dataset as *const CDataset).as_ref() };
     let output_path: Result<&str, Box<dyn Error>> = accept_str("output_path", output_path);
     let system_name: Result<&str, Box<dyn Error>> = accept_str("system_name", system_name);
-    result_to_json(result_predict_to_trecrun(
-        model,
-        dataset,
-        output_path,
-        system_name,
-        depth,
-    ))
+    result_to_json(
+        result_predict_to_trecrun(model, dataset, output_path, system_name, depth),
+        error,
+    )
 }

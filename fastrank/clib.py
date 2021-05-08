@@ -188,9 +188,9 @@ class CModel:
         Use the model to predict scores for each element of the given dataset.
         Returns a dictionary of instance-index to score.
         """
-        response = _handle_rust_json(lib.predict_scores(self.pointer, dataset.pointer))
-        _maybe_raise_error_json(response)
-        return dict((int(k), v) for k, v in response.items())
+        with ErrorCode() as err:
+            response = _handle_rust_json(lib.predict_scores(self.pointer, dataset.pointer, err))
+            return dict((int(k), v) for k, v in response.items())
 
     def __del__(self):
         if self.pointer is not None:
@@ -464,15 +464,12 @@ class CDataset:
             qrel._require_init()
             qrel_pointer = qrel.pointer
 
-        str_response = _handle_rust_str(
-            lib.evaluate_by_query(
-                model.pointer, self.pointer, qrel_pointer, evaluator.encode("utf-8")
+        with ErrorCode() as err:
+            return _handle_rust_json(
+                lib.evaluate_by_query(
+                    model.pointer, self.pointer, qrel_pointer, evaluator.encode("utf-8"), err
+                )
             )
-        )
-        assert str_response is not None
-        response = json.loads(str_response)
-        _maybe_raise_error_json(response)
-        return response
 
     def predict_scores(self, model: CModel) -> Dict[int, float]:
         """
@@ -502,18 +499,17 @@ class CDataset:
         """
         self._require_init()
         model._require_init()
-        str_response = _handle_rust_str(
-            lib.predict_to_trecrun(
-                model.pointer,
-                self.pointer,
-                output_path.encode("utf-8"),
-                system_name.encode("utf-8"),
-                depth,
+        with ErrorCode() as err:
+            response = _handle_rust_json(
+                lib.predict_to_trecrun(
+                    model.pointer,
+                    self.pointer,
+                    output_path.encode("utf-8"),
+                    system_name.encode("utf-8"),
+                    depth,
+                    err
+                )
             )
-        )
-        assert str_response is not None
-        response = json.loads(str_response)
-        _maybe_raise_error_json(response)
         if not quiet:
             print(
                 "Wrote {} records to {} as {}.".format(
