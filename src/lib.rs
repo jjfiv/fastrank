@@ -38,6 +38,7 @@ use model::ModelEnum;
 use qrel::QuerySetJudgments;
 
 use libc::{c_char, c_void};
+use sampling::DatasetSampling;
 use std::ffi::CString;
 use std::ptr;
 use std::slice;
@@ -175,6 +176,32 @@ pub extern "C" fn dataset_feature_sampling(
         )
         .map(|response| CDataset {
             reference: response,
+        }),
+        error,
+    )
+}
+
+#[no_mangle]
+pub extern "C" fn dataset_topk_sampling(
+    dataset: *mut CDataset,
+    model: *mut CModel,
+    depth: usize,
+    error: *mut isize,
+) -> *const CDataset {
+    let dataset: Option<&CDataset> = unsafe { dataset.as_ref() };
+    let model: Option<&CModel> = unsafe { model.as_ref() };
+    store_err_to_ptr::<_, Box<dyn Error>>(
+        // someday my try block will come:
+        (|| {
+            let dataset = dataset.ok_or_else(|| "Dataset pointer is null!".to_string())?;
+            let model = &model
+                .ok_or_else(|| "Model pointer is null!".to_string())?
+                .actual;
+            let sampled = dataset.reference.from_topk(model, depth);
+            Ok(sampled)
+        })()
+        .map(|response| CDataset {
+            reference: response.into_ref(),
         }),
         error,
     )

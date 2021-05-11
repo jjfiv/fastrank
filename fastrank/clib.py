@@ -189,7 +189,9 @@ class CModel:
         Returns a dictionary of instance-index to score.
         """
         with ErrorCode() as err:
-            response = _handle_rust_json(lib.predict_scores(self.pointer, dataset.pointer, err))
+            response = _handle_rust_json(
+                lib.predict_scores(self.pointer, dataset.pointer, err)
+            )
             return dict((int(k), v) for k, v in response.items())
 
     def __del__(self):
@@ -384,6 +386,18 @@ class CDataset:
             child.numpy_arrays_to_keep = self.numpy_arrays_to_keep[:]
             return child
 
+    def select_topk(self, model: CModel, depth: int = 10) -> "CDataset":
+        assert depth > 0
+        self._require_init()
+        model._require_init()
+
+        with ErrorCode() as err:
+            child = CDataset(
+                lib.dataset_topk_sampling(self.pointer, model.pointer, depth, err)
+            )
+            child.numpy_arrays_to_keep = self.numpy_arrays_to_keep[:]
+            return child
+
     def train_model(
         self,
         train_req: "fastrank.training.TrainRequest",  # type:ignore
@@ -467,7 +481,11 @@ class CDataset:
         with ErrorCode() as err:
             return _handle_rust_json(
                 lib.evaluate_by_query(
-                    model.pointer, self.pointer, qrel_pointer, evaluator.encode("utf-8"), err
+                    model.pointer,
+                    self.pointer,
+                    qrel_pointer,
+                    evaluator.encode("utf-8"),
+                    err,
                 )
             )
 
@@ -507,7 +525,7 @@ class CDataset:
                     output_path.encode("utf-8"),
                     system_name.encode("utf-8"),
                     depth,
-                    err
+                    err,
                 )
             )
         if not quiet:

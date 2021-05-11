@@ -79,7 +79,7 @@ class TrainRequest:
         type=Union[CoordinateAscentParams, RandomForestParams],
         factory=CoordinateAscentParams,
     )
-    judgments = attr.ib(type=CQRel, default=None)
+    judgments = attr.ib(type=Optional[CQRel], default=None)
 
     def to_dict(self) -> Dict[str, Any]:
         """

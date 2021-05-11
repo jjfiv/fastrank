@@ -5,9 +5,9 @@ use crate::qrel::QuerySetJudgments;
 use crate::stats::PercentileStats;
 use crate::InstanceId;
 use oorandom::Rand64;
-use std::cmp::Ordering;
 use std::collections::HashMap;
 use std::sync::Arc;
+use std::{cmp::Ordering, f32::NAN};
 
 const NUM_BOOTSTRAP_SAMPLES: u32 = 200;
 
@@ -574,7 +574,11 @@ impl Evaluator for NDCG {
         }
     }
     fn score(&self, qid: &str, ranked_list: &[RankedInstance]) -> f64 {
-        let actual_gain_vector: Vec<f32> = ranked_list.iter().map(|ri| ri.gain).collect();
+        let actual_gain_vector: Vec<f32> = ranked_list
+            .iter()
+            .take(self.depth.unwrap_or(ranked_list.len()))
+            .map(|ri| ri.gain)
+            .collect();
 
         let normalizer = self.ideal_gains.get(qid).cloned().unwrap_or_else(|| {
             if actual_gain_vector

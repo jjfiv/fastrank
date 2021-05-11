@@ -15,7 +15,7 @@ impl FeatureId {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[repr(transparent)]
-pub struct InstanceId(u32);
+pub struct InstanceId(pub(crate) u32);
 impl InstanceId {
     pub fn from_index(idx: usize) -> Self {
         Self(idx as u32)

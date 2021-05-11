@@ -1,7 +1,10 @@
-use crate::dataset::{DatasetRef, RankingDataset, SampledDatasetRef};
-use crate::randutil;
-use crate::FeatureId;
 use crate::InstanceId;
+use crate::{
+    dataset::{DatasetRef, RankingDataset, SampledDatasetRef},
+    model::Model,
+};
+use crate::{evaluators::RankedInstance, FeatureId};
+use crate::{heap::ScoringHeap, randutil};
 use oorandom::Rand64;
 use std::cmp;
 use std::collections::HashSet;
@@ -23,6 +26,8 @@ pub trait DatasetSampling {
     /// This represents a dataset sample with a deterministic subset of features.
     /// Errors when no features remaining or features to keep not available.
     fn with_features(&self, features: &[FeatureId]) -> Result<SampledDatasetRef, String>;
+
+    fn from_topk(&self, model: &dyn Model, k: usize) -> SampledDatasetRef;
 
     fn train_test(
         &self,
@@ -140,5 +145,30 @@ impl DatasetSampling for DatasetRef {
         let train_qs = qs;
 
         (self.with_queries(&train_qs), self.with_queries(&test_qs))
+    }
+
+    fn from_topk(&self, model: &dyn Model, k: usize) -> SampledDatasetRef {
+        let features = self.features();
+        let mut keep_instances = Vec::with_capacity(k * self.queries().len());
+        for (_qid, ids) in self.instances_by_query() {
+            let mut heap = ScoringHeap::new(k);
+            for id in ids.iter().cloned() {
+                let score = self.score(id, model);
+                heap.offer(RankedInstance {
+                    score,
+                    gain: self.gain(id),
+                    identifier: id,
+                });
+            }
+            assert!(heap.len() <= k);
+
+            keep_instances.extend(heap.drain_unordered().into_iter().map(|ri| ri.identifier));
+        }
+        keep_instances.sort_unstable();
+        SampledDatasetRef {
+            parent: self.get_ref_or_clone(),
+            instances: keep_instances,
+            features,
+        }
     }
 }

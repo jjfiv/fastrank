@@ -41,13 +41,13 @@ class BaseRanker(ABC):
         """
         self.fit_dataset(make_dataset(X, y, qids))
 
-    def score_dataset(self, dataset: CDataset) -> float:
+    def score_dataset(self, dataset: CDataset, measure: Optional[str] = None) -> float:
         """
         Computes the evaluation `measure` score for each query in the given dataset and returns the mean.
         """
         if self.model is None:
             raise ValueError("Cannot score before fit.")
-        by_query = dataset.evaluate(self.model, self.measure, self.qrel)
+        by_query = dataset.evaluate(self.model, measure or self.measure, self.qrel)
         if len(by_query) == 0:
             return 0.0
         return sum(by_query.values()) / len(by_query)
@@ -93,7 +93,7 @@ class CoordinateAscentRanker(BaseRanker):
     def _get_train_request(self) -> TrainRequest:
         return TrainRequest(
             measure=self.measure, params=self.params, judgments=self.qrel
-        )  # type:ignore
+        )
 
     def weights(self) -> np.ndarray:
         """Inspect the linear weights learned."""
