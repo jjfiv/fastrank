@@ -5,7 +5,6 @@ use std::{collections::HashMap, ffi::CString, ptr, sync::Arc};
 use std::{error::Error, sync::atomic::AtomicIsize};
 use std::{ffi::CStr, sync::Mutex};
 
-use crate::coordinate_ascent::CoordinateAscentParams;
 use crate::dataset;
 use crate::dataset::DatasetRef;
 use crate::dataset::RankingDataset;
@@ -17,6 +16,7 @@ use crate::qrel::QuerySetJudgments;
 use crate::random_forest::RandomForestParams;
 use crate::sampling::DatasetSampling;
 use crate::FeatureId;
+use crate::{coordinate_ascent::CoordinateAscentParams, core::InstanceId};
 
 use crate::{CDataset, CModel, CQRel};
 
@@ -162,33 +162,39 @@ pub(crate) fn result_dataset_query_json(
     query_str: Result<&str, Box<dyn Error>>,
 ) -> Result<String, Box<dyn Error>> {
     let dataset = match dataset {
-        Some(d) => d,
+        Some(d) => &d.reference,
         None => Err("Dataset pointer is null!")?,
     };
 
     let response = match query_str? {
         "is_sampled" => {
-            if dataset.reference.is_sampled() {
+            if dataset.is_sampled() {
                 "true".to_string()
             } else {
                 "false".to_string()
             }
         }
-        "num_features" => serde_json::to_string(&dataset.reference.n_dim())?,
-        "feature_ids" => serde_json::to_string(&dataset.reference.features())?,
-        "num_instances" => serde_json::to_string(&dataset.reference.n_instances())?,
-        "queries" => serde_json::to_string(&dataset.reference.queries())?,
-        "instances_by_query" => serde_json::to_string(&dataset.reference.instances_by_query())?,
+        "num_features" => serde_json::to_string(&dataset.n_dim())?,
+        "feature_ids" => serde_json::to_string(&dataset.features())?,
+        "num_instances" => serde_json::to_string(&dataset.n_instances())?,
+        "queries" => serde_json::to_string(&dataset.queries())?,
+        "instances_by_query" => serde_json::to_string(&dataset.instances_by_query())?,
+        "names_dense" => {
+            let mut names: Vec<Option<&str>> = Vec::with_capacity(dataset.n_instances() as usize);
+            for i in 0..dataset.n_instances() {
+                names.push(dataset.document_name(InstanceId(i)));
+            }
+            serde_json::to_string(&names)?
+        }
         "queries_dense" => {
-            let queries = dataset.reference.query_ids();
+            let queries = dataset.query_ids();
             serde_json::to_string(&queries)?
         }
         "feature_names" => {
             let names = dataset
-                .reference
                 .features()
                 .into_iter()
-                .map(|f| dataset.reference.feature_name(f))
+                .map(|f| dataset.feature_name(f))
                 .collect::<Vec<_>>();
             serde_json::to_string(&names)?
         }

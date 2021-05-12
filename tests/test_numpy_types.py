@@ -86,3 +86,51 @@ def test_to_arrays():
     qid2 = dataset.get_query_vec()
     assert len(qid2) == len(qid)
     assert [int(q) for q in qid2] == qid.tolist()
+
+    names = dataset._query_json("names_dense")
+    assert len(names) == len(qid2)
+
+
+def test_to_arrays2():
+    (train_X, y, qid) = load_svmlight_file(
+        "examples/full_featured.svm",
+        zero_based=True,
+        query_id=True,
+    )
+    X = train_X.todense()
+    dataset = CDataset.open_ranksvm("examples/full_featured.svm")
+    X2 = dataset._to_dense_X()
+    print(X2)
+    assert X.shape == X2.shape
+    assert np.allclose(X, X2)
+
+    y2 = dataset.get_gains()
+    assert y.shape == y2.shape
+    assert np.allclose(y, y2)
+
+    qid2 = dataset.get_query_vec()
+    assert len(qid2) == len(qid)
+    assert [int(q) for q in qid2] == qid.tolist()
+
+    names = dataset._query_json("names_dense")
+    assert names == list("ABCDEFGHIJKLMNOPQRSTUVWXYZA")
+
+
+def test_to_arrays3():
+    (train_X, y, qid) = load_svmlight_file(
+        "examples/full_featured.svm",
+        zero_based=True,
+        query_id=True,
+    )
+    X = train_X.todense()
+    dataset = CDataset.open_ranksvm("examples/full_featured.svm")
+    arrays = dataset.to_arrays()
+    (X2, y2, qid2, names) = (arrays.X, arrays.y, arrays.qid, arrays.names)
+
+    assert X.shape == X2.shape
+    assert np.allclose(X, X2)
+    assert y.shape == y2.shape
+    assert np.allclose(y, y2)
+    assert len(qid2) == len(qid)
+    assert [int(q) for q in qid2] == qid.tolist()
+    assert names == list("ABCDEFGHIJKLMNOPQRSTUVWXYZA")

@@ -7,6 +7,38 @@ import numpy as np
 _MODEL_TYPES = ["SingleFeature", "Linear", "DecisionTree", "Ensemble"]
 
 
+class RankingArrays:
+    """ A class to hold the four parallel arrays in a ranking dataset. """
+
+    def __init__(
+        self,
+        X: np.ndarray,
+        y: np.ndarray,
+        qid: List[str],
+        names: Optional[List[str]] = None,
+    ):
+        self.X = X
+        self.y = y
+        self.qid = qid
+        self.names = names
+
+
+class ErrorCode:
+    def __init__(self):
+        self.error = ffi.new("intptr_t *")
+
+    def ptr(self):
+        return self.error
+
+    def __enter__(self):
+        self.error[0] = 0
+        return self.error
+
+    def __exit__(self, ex_type, ex_value, ex_tb):
+        if self.error[0] > 0:
+            raise ValueError(_handle_rust_str(lib.fetch_err(self.error[0])))
+
+
 def _handle_rust_str(result) -> Optional[str]:
     """
     This method decodes bytes to UTF-8 and makes a new python string object.
@@ -337,6 +369,15 @@ class CDataset:
             dataset.numpy_arrays_to_keep = numpy_arrays_to_keep
             return dataset
 
+    def to_arrays(self) -> RankingArrays:
+        X = self._to_dense_X()
+        y = self.get_gains()
+        qid = self.get_query_vec()
+        names = self._query_json("names_dense")
+        if all(n is None for n in names):
+            names = None
+        return RankingArrays(X, y, qid, names)
+
     def _require_init(self):
         if self.pointer is None:
             raise ValueError("Forgot to call open_* or from_numpy on CDataset!")
@@ -572,22 +613,6 @@ class CDataset:
                 )
             )
         return response
-
-
-class ErrorCode:
-    def __init__(self):
-        self.error = ffi.new("intptr_t *")
-
-    def ptr(self):
-        return self.error
-
-    def __enter__(self):
-        self.error[0] = 0
-        return self.error
-
-    def __exit__(self, ex_type, ex_value, ex_tb):
-        if self.error[0] > 0:
-            raise ValueError(_handle_rust_str(lib.fetch_err(self.error[0])))
 
 
 def query_json(message: str):
