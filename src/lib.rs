@@ -31,7 +31,7 @@ pub mod random_forest;
 /// Streaming computation of statistics.
 pub mod stats;
 
-use dataset::DatasetRef;
+use dataset::{DatasetRef, RankingDataset};
 use dense_dataset::{DenseDataset, TypedArrayRef};
 use json_api::TrainRequest;
 use model::ModelEnum;
@@ -286,6 +286,87 @@ pub extern "C" fn make_dense_dataset_v2(
         })(),
         error,
     )
+}
+
+#[no_mangle]
+pub extern "C" fn dataset_to_dense_X(
+    dataset: *const CDataset,
+    n: u32,
+    d: u32,
+    x: *mut c_void,
+    x_type: *const c_void,
+    error: *mut isize,
+) -> usize {
+    let dataset: Option<&CDataset> = unsafe { dataset.as_ref() };
+    let x_len = (n * d) as usize;
+    store_err::<usize, Box<dyn Error>>(
+        (|| {
+            let dtype = accept_str("x.dtype", x_type)?;
+            let dataset = &dataset
+                .ok_or_else(|| "Dataset pointer is null!".to_string())?
+                .reference;
+            if dataset.n_dim() != d {
+                Err("Number of features do not match.")?;
+            }
+            if dataset.n_instances() != n {
+                Err("Number of instances do not match.")?;
+            }
+            match dtype {
+                "float32" => {
+                    let array: &mut [f32] =
+                        unsafe { slice::from_raw_parts_mut(x as *mut f32, x_len) };
+                    dataset.copy_features_f32(array)
+                }
+                // TODO: float64
+                other => Err(format!("Unexpected dtype={} for dataset_to_dense_X", other))?,
+            }
+        })(),
+        error,
+    )
+    .unwrap_or_default()
+}
+
+#[no_mangle]
+pub extern "C" fn dataset_to_dense_y(
+    dataset: *const CDataset,
+    n: u32,
+    y: *mut c_void,
+    y_type: *const c_void,
+    error: *mut isize,
+) -> usize {
+    let dataset: Option<&CDataset> = unsafe { dataset.as_ref() };
+    store_err::<usize, Box<dyn Error>>(
+        (|| {
+            let dtype = accept_str("y.dtype", y_type)?;
+            let dataset = &dataset
+                .ok_or_else(|| "Dataset pointer is null!".to_string())?
+                .reference;
+            if dataset.n_instances() != n {
+                Err("Number of instances do not match.")?;
+            }
+            let n = n as usize;
+            match dtype {
+                "float32" => {
+                    let array: &mut [f32] = unsafe { slice::from_raw_parts_mut(y as *mut f32, n) };
+                    for (dest, gain) in array.iter_mut().zip(dataset.gains().into_iter()) {
+                        *dest = gain
+                    }
+                    Ok(n)
+                }
+                "float64" => {
+                    let array: &mut [f64] = unsafe { slice::from_raw_parts_mut(y as *mut f64, n) };
+                    for (dest, gain) in array.iter_mut().zip(dataset.gains().into_iter()) {
+                        *dest = gain as f64
+                    }
+                    Ok(n)
+                }
+                // TODO: ints?
+                other => Err(format!("Unexpected dtype={} for dataset_to_dense_X", other))?,
+            }
+        })(),
+        error,
+    )
+    .unwrap_or_default()
 }
 
 #[no_mangle]

@@ -2,7 +2,7 @@ use std::cmp::Ordering;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[repr(transparent)]
-pub struct FeatureId(u32);
+pub struct FeatureId(pub(crate) u32);
 
 impl FeatureId {
     pub fn from_index(idx: usize) -> Self {

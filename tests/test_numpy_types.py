@@ -70,3 +70,19 @@ def test_qstrings():
     m = cheap_linear()
     m.fit_dataset(dataset)
     assert (m.score_dataset(dataset)) >= 0.726
+
+
+def test_to_arrays():
+    X = train_X.todense()
+    dataset = CDataset.from_numpy(X, y, qid)
+    X2 = dataset._to_dense_X()
+    assert X.shape == X2.shape
+    assert np.allclose(X, X2)
+
+    y2 = dataset.get_gains()
+    assert y.shape == y2.shape
+    assert np.allclose(y, y2)
+
+    qid2 = dataset.get_query_vec()
+    assert len(qid2) == len(qid)
+    assert [int(q) for q in qid2] == qid.tolist()

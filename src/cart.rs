@@ -372,7 +372,7 @@ fn learn_recursive(
         return Err(NoTreeReason::DepthExceeded);
     }
     // Cannot split further:
-    if dataset.instances().len() < (params.min_leaf_support) as usize {
+    if dataset.n_instances() < params.min_leaf_support {
         return Err(NoTreeReason::SplitTooSmall);
     }
 

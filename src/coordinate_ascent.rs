@@ -191,7 +191,7 @@ impl CoordinateAscentParams {
         let mut rand = Rand64::new(self.seed.into());
 
         assert!(data.n_dim() > 0);
-        assert!(data.instances().len() > 0);
+        assert!(data.n_instances() > 0);
         assert!(data.queries().len() > 0);
 
         if !self.quiet {

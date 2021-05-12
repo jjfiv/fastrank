@@ -176,9 +176,13 @@ pub(crate) fn result_dataset_query_json(
         }
         "num_features" => serde_json::to_string(&dataset.reference.n_dim())?,
         "feature_ids" => serde_json::to_string(&dataset.reference.features())?,
-        "num_instances" => serde_json::to_string(&dataset.reference.instances().len())?,
+        "num_instances" => serde_json::to_string(&dataset.reference.n_instances())?,
         "queries" => serde_json::to_string(&dataset.reference.queries())?,
         "instances_by_query" => serde_json::to_string(&dataset.reference.instances_by_query())?,
+        "queries_dense" => {
+            let queries = dataset.reference.query_ids();
+            serde_json::to_string(&queries)?
+        }
         "feature_names" => {
             let names = dataset
                 .reference

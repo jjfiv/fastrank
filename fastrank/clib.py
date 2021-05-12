@@ -341,6 +341,43 @@ class CDataset:
         if self.pointer is None:
             raise ValueError("Forgot to call open_* or from_numpy on CDataset!")
 
+    def _to_dense_X(self) -> np.ndarray:
+        self._require_init()
+        N = self.num_instances()
+        D = self.num_features()
+        X = np.zeros((N, D), dtype=np.float32)
+        with ErrorCode() as err:
+            count = lib.dataset_to_dense_X(
+                self.pointer,
+                N,
+                D,
+                ffi.cast("void *", X.ctypes.data),
+                str(X.dtype).encode("utf-8"),
+                err,
+            )
+            assert count == N * D
+        return X
+
+    def get_gains(self) -> np.ndarray:
+        """ Return a numpy vector of y values; or gains as float32."""
+        self._require_init()
+        N = self.num_instances()
+        y = np.zeros(N, dtype=np.float32)
+        with ErrorCode() as err:
+            count = lib.dataset_to_dense_y(
+                self.pointer,
+                N,
+                ffi.cast("void *", y.ctypes.data),
+                str(y.dtype).encode("utf-8"),
+                err,
+            )
+            assert count == N
+        return y
+
+    def get_query_vec(self) -> List[str]:
+        self._require_init()
+        return self._query_json("queries_dense")
+
     def subsample_queries(self, queries: List[str]) -> "CDataset":
         """
         Construct a subset of this dataset from the given query ids.

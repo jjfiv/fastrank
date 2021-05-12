@@ -1,6 +1,5 @@
 import fastrank
 from fastrank.training import CoordinateAscentParams, RandomForestParams
-import unittest
 import tempfile
 import numpy as np
 from typing import List

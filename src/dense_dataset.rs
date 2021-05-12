@@ -77,8 +77,8 @@ impl TypedArrayRef {
 
 #[derive(Debug, Clone)]
 pub struct DenseDataset {
-    n_features: usize,
-    n_instances: usize,
+    num_features: usize,
+    num_instances: usize,
     xs: TypedArrayRef,
     ys: TypedArrayRef,
     qid_strings: HashMap<i64, String>,
@@ -93,20 +93,20 @@ impl DenseDataset {
         }
     }
     pub fn try_new(
-        n_instances: usize,
-        n_features: usize,
+        num_instances: usize,
+        num_features: usize,
         xs: TypedArrayRef,
         ys: TypedArrayRef,
         qids: TypedArrayRef,
         qid_strs: Option<HashMap<i64, String>>,
     ) -> Result<DenseDataset, Box<dyn Error>> {
-        if ys.len() != n_instances {
+        if ys.len() != num_instances {
             Err("Bad y-length")?;
         }
-        if qids.len() != n_instances {
+        if qids.len() != num_instances {
             Err("Bad qids-length")?;
         }
-        if xs.len() != (n_instances * n_features) {
+        if xs.len() != (num_instances * num_features) {
             Err("Bad xs-length")?;
         }
 
@@ -114,7 +114,7 @@ impl DenseDataset {
             from_py
         } else {
             let mut computed = HashMap::new();
-            for id in 0..n_instances {
+            for id in 0..num_instances {
                 let qid = qids.get_i64(id).unwrap();
                 computed.entry(qid).or_insert_with(|| format!("{}", qid));
             }
@@ -122,8 +122,8 @@ impl DenseDataset {
         };
 
         Ok(DenseDataset {
-            n_instances,
-            n_features,
+            num_instances,
+            num_features,
             xs,
             ys,
             qids,
@@ -143,7 +143,7 @@ impl FeatureRead for DenseDatasetInstance<'_> {
         self.dataset.get_feature_value(self.id, idx)
     }
     fn dotp(&self, weights: &[f64]) -> f64 {
-        let start = self.id.to_index() * self.dataset.n_features;
+        let start = self.id.to_index() * self.dataset.num_features;
         self.dataset.xs.dot(weights, start)
     }
 }
@@ -157,15 +157,18 @@ impl RankingDataset for DenseDataset {
         false
     }
     fn features(&self) -> Vec<FeatureId> {
-        (0..self.n_features)
+        (0..self.num_features)
             .map(|i| FeatureId::from_index(i))
             .collect()
     }
     fn n_dim(&self) -> u32 {
-        self.n_features as u32
+        self.num_features as u32
+    }
+    fn n_instances(&self) -> u32 {
+        return self.num_instances as u32;
     }
     fn instances(&self) -> Vec<InstanceId> {
-        (0..self.n_instances)
+        (0..self.num_instances)
             .map(|i| InstanceId::from_index(i))
             .collect()
     }
@@ -214,7 +217,7 @@ impl RankingDataset for DenseDataset {
     }
     /// Lookup a feature value for a particular instance.
     fn get_feature_value(&self, instance: InstanceId, fid: FeatureId) -> Option<f64> {
-        let index = self.n_features * instance.to_index() + fid.to_index();
+        let index = self.num_features * instance.to_index() + fid.to_index();
         self.xs.get_f64(index)
     }
     // Given a name or number as a string, lookup the feature id:
@@ -223,8 +226,8 @@ impl RankingDataset for DenseDataset {
     }
 
     fn score_all(&self, model: &dyn Model) -> Vec<f64> {
-        let mut output = Vec::with_capacity(self.n_instances);
-        for id in 0..self.n_instances {
+        let mut output = Vec::with_capacity(self.num_instances);
+        for id in 0..self.num_instances {
             let id = InstanceId::from_index(id);
             let instance = DenseDatasetInstance { id, dataset: self };
             output.push(model.score(&instance))
@@ -233,18 +236,29 @@ impl RankingDataset for DenseDataset {
     }
 
     fn gains(&self) -> Vec<f32> {
-        let mut output = Vec::with_capacity(self.n_instances);
-        assert_eq!(self.n_instances, self.ys.len());
-        for id in 0..self.n_instances {
+        let mut output = Vec::with_capacity(self.num_instances);
+        assert_eq!(self.num_instances, self.ys.len());
+        for id in 0..self.num_instances {
             output.push(self.ys.get_f32(id).expect("present"));
         }
         output
     }
 
     fn query_ids(&self) -> Vec<&str> {
-        (0..self.n_instances)
+        (0..self.num_instances)
             .map(|index| self.qids.get_i64(index).expect("present"))
             .map(|qid_id| self.qid_strings[&qid_id].as_str())
             .collect()
+    }
+
+    fn copy_features_f32(&self, destination: &mut [f32]) -> Result<usize, Box<dyn Error>> {
+        let n = self.n_instances() as usize;
+        let d = self.n_dim() as usize;
+        assert_eq!(destination.len(), (n * d));
+
+        for (index, dest) in destination.iter_mut().enumerate() {
+            *dest = self.xs.get_f32(index).unwrap_or_default();
+        }
+        Ok(destination.len())
     }
 }

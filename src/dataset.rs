@@ -26,6 +26,7 @@ pub trait RankingDataset: Send + Sync {
     fn get_ref(&self) -> Option<DatasetRef>;
     fn features(&self) -> Vec<FeatureId>;
     fn n_dim(&self) -> u32;
+    fn n_instances(&self) -> u32;
     fn is_sampled(&self) -> bool;
     fn instances(&self) -> Vec<InstanceId>;
     fn instances_by_query(&self) -> HashMap<String, Vec<InstanceId>>;
@@ -47,6 +48,8 @@ pub trait RankingDataset: Send + Sync {
     fn get_feature_value(&self, instance: InstanceId, fid: FeatureId) -> Option<f64>;
     // Given a name or number as a string, lookup the feature id:
     fn try_lookup_feature(&self, name_or_num: &str) -> Result<FeatureId, Box<dyn Error>>;
+
+    fn copy_features_f32(&self, destination: &mut [f32]) -> Result<usize, Box<dyn Error>>;
 }
 
 /// This is an Arc wrapper around a LoadedRankingDataset, for cheaper copies.
@@ -67,6 +70,9 @@ impl RankingDataset for DatasetRef {
     }
     fn n_dim(&self) -> u32 {
         self.data.n_dim()
+    }
+    fn n_instances(&self) -> u32 {
+        return self.data.n_instances();
     }
     fn instances(&self) -> Vec<InstanceId> {
         self.data.instances()
@@ -108,6 +114,10 @@ impl RankingDataset for DatasetRef {
     fn query_ids(&self) -> Vec<&str> {
         return self.data.query_ids();
     }
+
+    fn copy_features_f32(&self, destination: &mut [f32]) -> Result<usize, Box<dyn Error>> {
+        self.data.copy_features_f32(destination)
+    }
 }
 
 #[derive(Clone)]
@@ -137,6 +147,9 @@ impl RankingDataset for SampledDatasetRef {
     }
     fn n_dim(&self) -> u32 {
         self.features.len() as u32
+    }
+    fn n_instances(&self) -> u32 {
+        self.instances.len() as u32
     }
     fn instances(&self) -> Vec<InstanceId> {
         self.instances.clone()
@@ -210,6 +223,24 @@ impl RankingDataset for SampledDatasetRef {
             .cloned()
             .map(|it| self.parent.query_id(it))
             .collect()
+    }
+
+    fn copy_features_f32(&self, destination: &mut [f32]) -> Result<usize, Box<dyn Error>> {
+        let n = self.n_instances() as usize;
+        let d = self.n_dim() as usize;
+        assert_eq!(destination.len(), (n * d));
+        for (index, id) in self.instances.iter().enumerate() {
+            let offset = index * d;
+            let row = &mut destination[offset..offset + d];
+            for (fid, dest) in (0..d).zip(row.iter_mut()) {
+                let val = self
+                    .parent
+                    .get_feature_value(*id, FeatureId(fid as u32))
+                    .unwrap_or_default();
+                *dest = val as f32;
+            }
+        }
+        Ok((n * d) as usize)
     }
 }
 
@@ -311,6 +342,9 @@ impl RankingDataset for LoadedRankingDataset {
     fn n_dim(&self) -> u32 {
         self.n_dim
     }
+    fn n_instances(&self) -> u32 {
+        return self.instances.len() as u32;
+    }
     fn instances(&self) -> Vec<InstanceId> {
         (0..self.instances.len())
             .map(|i| InstanceId::from_index(i))
@@ -367,6 +401,21 @@ impl RankingDataset for LoadedRankingDataset {
 
     fn query_ids(&self) -> Vec<&str> {
         self.instances.iter().map(|it| it.qid.as_str()).collect()
+    }
+
+    fn copy_features_f32(&self, destination: &mut [f32]) -> Result<usize, Box<dyn Error>> {
+        let n = self.n_instances() as usize;
+        let d = self.n_dim() as usize;
+        assert_eq!(destination.len(), (n * d));
+        for (index, inst) in self.instances.iter().enumerate() {
+            let offset = index * d;
+            let row = &mut destination[offset..offset + d];
+            for (fid, dest) in (0..d).zip(row.iter_mut()) {
+                let val = inst.features.get(FeatureId(fid as u32)).unwrap_or_default();
+                *dest = val as f32;
+            }
+        }
+        Ok((n * d) as usize)
     }
 }
 

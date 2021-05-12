@@ -5,9 +5,9 @@ use crate::qrel::QuerySetJudgments;
 use crate::stats::PercentileStats;
 use crate::InstanceId;
 use oorandom::Rand64;
+use std::cmp::Ordering;
 use std::collections::HashMap;
 use std::sync::Arc;
-use std::{cmp::Ordering, f32::NAN};
 
 const NUM_BOOTSTRAP_SAMPLES: u32 = 200;
 
@@ -213,7 +213,7 @@ impl SetEvaluator {
     }
 
     pub fn fast_eval2(&self, predictions: &[f64], vectors: &DatasetVectors<'_>) -> f64 {
-        debug_assert_eq!(vectors.instances.len(), self.dataset.instances().len());
+        debug_assert_eq!(vectors.instances.len(), self.dataset.n_instances() as usize);
 
         let mut sum = 0.0;
         let mut n = 0;
@@ -261,7 +261,7 @@ impl SetEvaluator {
         queries: &[&'d str],
         vectors: &DatasetVectors<'d>,
     ) -> f64 {
-        debug_assert_eq!(vectors.instances.len(), self.dataset.instances().len());
+        debug_assert_eq!(vectors.instances.len(), self.dataset.n_instances() as usize);
 
         let mut sum = 0.0;
         let mut n = 0;
