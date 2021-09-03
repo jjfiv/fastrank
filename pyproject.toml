@@ -4,4 +4,4 @@ build-backend = "maturin"
 
 [tool.maturin]
 bindings = "cffi"
-compatibility = "manylinux2010"
+compatibility = "Manylinux"
