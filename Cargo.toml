@@ -1,6 +1,6 @@
 [package]
 name = "fastrank"
-version = "0.8.0-dev"
+version = "0.8.0"
 authors = ["John Foley <johnf@middlebury.edu>"]
 edition = "2018"
 readme = "README.md"
