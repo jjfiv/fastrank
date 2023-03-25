@@ -34,7 +34,8 @@ jobs:
       - name: Install built wheel - x86_64
         run: |
           pip install -r requirements.txt
-          pip install fastrank --no-index --find-links dist --force-reinstall
+          pip uninstall fastrank
+          pip install fastrank --no-index --find-links dist
       - name: Build wheels - universal2
         if: ${{ matrix.python-version >= '3.8' || contains(fromJson('["3.10", "3.11"]'), matrix.python-version) }}
         uses: PyO3/maturin-action@v1
@@ -44,7 +45,8 @@ jobs:
         if: ${{ matrix.python-version >= '3.8' || contains(fromJson('["3.10", "3.11"]'), matrix.python-version) }}
         run: |
           pip install -r requirements.txt
-          pip install fastrank --no-index --find-links dist --force-reinstall
+          pip uninstall fastrank
+          pip install fastrank --no-index --find-links dist
       - name: Python UnitTest
         run: |
           python -I -m unittest discover -s tests -v
@@ -80,7 +82,8 @@ jobs:
       - name: Install built wheel
         run: |
           pip install -r requirements.txt
-          pip install fastrank --no-index --find-links dist --force-reinstall
+          pip uninstall fastrank
+          pip install fastrank --no-index --find-links dist
       - name: Python UnitTest
         run: |
           python -I -m unittest discover -s tests -v
@@ -117,7 +120,8 @@ jobs:
       - name: Python UnitTest
         run: |
           pip install -r requirements.txt
-          pip install fastrank --no-index --find-links dist --force-reinstall
+          pip uninstall fastrank
+          pip install fastrank --no-index --find-links dist
           python -I -m unittest discover -s tests -v
       - name: Upload wheels
         uses: actions/upload-artifact@v3
