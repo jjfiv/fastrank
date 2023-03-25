@@ -114,7 +114,7 @@ jobs:
         with:
           target: ${{ matrix.target }}
           manylinux: auto
-          args: -i ${{ matrix.python-version }} --release --out dist
+          args: -i python${{ matrix.python-version }} --release --out dist
       - name: Python UnitTest
         run: |
           pip install -r requirements.txt
