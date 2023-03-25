@@ -20,8 +20,7 @@ impl QueryJudgments {
     }
     pub fn num_relevant(&self) -> u32 {
         self.docid_to_rel
-            .iter()
-            .map(|(_, gain)| gain)
+            .values()
             .filter(|gain| gain.into_inner() > 0.0)
             .count() as u32
     }

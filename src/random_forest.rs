@@ -347,10 +347,7 @@ pub fn learn_decision_tree(params: &RandomForestParams, dataset: &DatasetRef) ->
     let root = learn_recursive(params, dataset, &step);
     match root {
         Ok(tree) => tree,
-        Err(_e) => {
-            TreeNode::LeafNode(step.to_output(dataset))
-            //panic!("{:?} fids={:?} N={}", _e, step.features, step.instances.len())
-        }
+        Err(_e) => TreeNode::LeafNode(step.to_output(dataset)),
     }
 }
 
