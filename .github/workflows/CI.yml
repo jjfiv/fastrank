@@ -114,6 +114,7 @@ jobs:
         with:
           target: ${{ matrix.target }}
           manylinux: auto
+          before-script-linux: python${{ matrix.python-version }} -m pip install cffi
           args: -i python${{ matrix.python-version }} --release --out dist
       - name: Python UnitTest
         run: |
