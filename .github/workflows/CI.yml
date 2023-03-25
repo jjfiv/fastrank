@@ -33,6 +33,7 @@ jobs:
           args: -i python --release --out dist --sdist
       - name: Install built wheel - x86_64
         run: |
+          pip install -r requirements.txt
           pip install fastrank --no-index --find-links dist --force-reinstall
       - name: Build wheels - universal2
         if: ${{ matrix.python-version >= '3.8' || contains(fromJson('["3.10", "3.11"]'), matrix.python-version) }}
@@ -42,6 +43,7 @@ jobs:
       - name: Install built wheel - universal2
         if: ${{ matrix.python-version >= '3.8' || contains(fromJson('["3.10", "3.11"]'), matrix.python-version) }}
         run: |
+          pip install -r requirements.txt
           pip install fastrank --no-index --find-links dist --force-reinstall
       - name: Python UnitTest
         run: |
@@ -57,7 +59,7 @@ jobs:
     strategy:
       matrix:
         python-version: ["3.7", "3.8", "3.9", "3.10", "3.11"]
-        target: [x64, x86]
+        target: [x64]
     steps:
       - uses: actions/checkout@v3
       - uses: actions/setup-python@v4
@@ -67,10 +69,8 @@ jobs:
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
       - name: Build
-        if: matrix.target == 'x64'
         run: cargo build --release
       - name: Tests
-        if: matrix.target == 'x64'
         run: cargo test --release
       - name: Build wheels
         uses: PyO3/maturin-action@v1
@@ -79,6 +79,7 @@ jobs:
           args: -i python --release --out dist
       - name: Install built wheel
         run: |
+          pip install -r requirements.txt
           pip install fastrank --no-index --find-links dist --force-reinstall
       - name: Python UnitTest
         run: |
@@ -94,7 +95,6 @@ jobs:
     strategy:
       matrix:
         python-version: ["3.7", "3.8", "3.9", "3.10", "3.11"]
-        target: [x86_64]
     steps:
       - uses: actions/checkout@v3
       - name: Install Rust toolchain
@@ -116,6 +116,7 @@ jobs:
           args: -i ${{ matrix.python-version }} --release --out dist
       - name: Python UnitTest
         run: |
+          pip install -r requirements.txt
           pip install fastrank --no-index --find-links dist --force-reinstall
           python -I -m unittest discover -s tests -v
       - name: Upload wheels
