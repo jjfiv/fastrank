@@ -12,7 +12,7 @@ pub fn sample_with_replacement<T: Clone>(data: &[T], rand: &mut Rand64, count: u
 }
 
 pub fn sample_without_replacement<T: Clone>(data: &[T], rand: &mut Rand64, count: usize) -> Vec<T> {
-    let mut in_vec: Vec<T> = data.iter().cloned().collect();
+    let mut in_vec: Vec<T> = data.to_vec();
     shuffle(&mut in_vec, rand);
     in_vec.into_iter().take(count).collect()
 }

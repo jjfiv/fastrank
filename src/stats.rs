@@ -52,18 +52,14 @@ impl Default for StreamingStats {
 
 impl StreamingStats {
     pub fn finish(&self) -> Option<ComputedStats> {
-        if let Some(var) = self.get_variance() {
-            Some(ComputedStats {
-                num_elements: self.num_elements,
-                mean: self.mean,
-                max: self.max,
-                min: self.min,
-                variance: var,
-                total: self.total,
-            })
-        } else {
-            None
-        }
+        self.get_variance().map(|var| ComputedStats {
+            num_elements: self.num_elements,
+            mean: self.mean,
+            max: self.max,
+            min: self.min,
+            variance: var,
+            total: self.total,
+        })
     }
     pub fn new() -> Self {
         Self::default()
@@ -144,7 +140,7 @@ impl PercentileStats {
         self.percentile(0.5)
     }
     pub fn percentile(&self, percentile: f64) -> f64 {
-        if percentile < 0.0 || percentile > 1.0 {
+        if !(0.0..=1.0).contains(&percentile) {
             panic!("Bad percentile: {}, should be 0<x<1", percentile);
         }
         let n = percentile * ((self.dataset.len() - 1) as f64);

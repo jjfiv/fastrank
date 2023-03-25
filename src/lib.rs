@@ -1,3 +1,5 @@
+//! This lib contains a bunch of unsafe functions; which are bound to python.
+//! See the python tests under /tests/ for integration tests of correctness.
 #![crate_type = "dylib"]
 
 #[macro_use]
@@ -73,32 +75,44 @@ impl Default for CResult {
     }
 }
 
+/// # Safety
+/// This is FFI, don't use from Rust.
 #[no_mangle]
-pub extern "C" fn free_str(originally_from_rust: *mut c_void) {
+pub unsafe extern "C" fn free_str(originally_from_rust: *mut c_void) {
     let _will_drop: CString = unsafe { CString::from_raw(originally_from_rust as *mut c_char) };
 }
 
 /// Note: not-recursive. Free Error Message Manually!
+/// # Safety
+/// This is FFI, don't use from Rust.
 #[no_mangle]
-pub extern "C" fn free_c_result(originally_from_rust: *mut CResult) {
+pub unsafe extern "C" fn free_c_result(originally_from_rust: *mut CResult) {
     let _will_drop: Box<CResult> = unsafe { Box::from_raw(originally_from_rust) };
 }
 
+/// # Safety
+/// This is FFI, don't use from Rust.
 #[no_mangle]
-pub extern "C" fn free_dataset(originally_from_rust: *mut CDataset) {
+pub unsafe extern "C" fn free_dataset(originally_from_rust: *mut CDataset) {
     let _will_drop: Box<CDataset> = unsafe { Box::from_raw(originally_from_rust) };
 }
 
+/// # Safety
+/// This is FFI, don't use from Rust.
 #[no_mangle]
-pub extern "C" fn free_model(originally_from_rust: *mut CModel) {
+pub unsafe extern "C" fn free_model(originally_from_rust: *mut CModel) {
     let _will_drop: Box<CModel> = unsafe { Box::from_raw(originally_from_rust) };
 }
 
+/// # Safety
+/// This is FFI, don't use from Rust.
 #[no_mangle]
-pub extern "C" fn free_cqrel(originally_from_rust: *mut CQRel) {
+pub unsafe extern "C" fn free_cqrel(originally_from_rust: *mut CQRel) {
     let _will_drop: Box<CQRel> = unsafe { Box::from_raw(originally_from_rust) };
 }
 
+/// # Safety
+/// This is FFI, don't use from Rust.
 #[no_mangle]
 pub extern "C" fn load_cqrel(data_path: *const c_void) -> *const CResult {
     result_to_c(
@@ -106,6 +120,8 @@ pub extern "C" fn load_cqrel(data_path: *const c_void) -> *const CResult {
     )
 }
 
+/// # Safety
+/// This is FFI, don't use from Rust.
 #[no_mangle]
 pub extern "C" fn cqrel_from_json(json_str: *const c_void) -> *const CResult {
     result_to_c(
@@ -114,6 +130,8 @@ pub extern "C" fn cqrel_from_json(json_str: *const c_void) -> *const CResult {
     )
 }
 
+/// # Safety
+/// This is FFI, don't use from Rust.
 #[no_mangle]
 pub extern "C" fn cqrel_query_json(cqrel: *const CQRel, query_str: *const c_void) -> *const c_void {
     let cqrel: Option<&CQRel> = unsafe { (cqrel as *mut CQRel).as_ref() };
@@ -123,6 +141,8 @@ pub extern "C" fn cqrel_query_json(cqrel: *const CQRel, query_str: *const c_void
     ))
 }
 
+/// # Safety
+/// This is FFI, don't use from Rust.
 #[no_mangle]
 pub extern "C" fn load_ranksvm_format(
     data_path: *mut c_void,
@@ -141,6 +161,8 @@ pub extern "C" fn load_ranksvm_format(
     )
 }
 
+/// # Safety
+/// This is FFI, don't use from Rust.
 #[no_mangle]
 pub extern "C" fn dataset_query_sampling(
     dataset: *mut CDataset,
@@ -155,6 +177,8 @@ pub extern "C" fn dataset_query_sampling(
     )
 }
 
+/// # Safety
+/// This is FFI, don't use from Rust.
 #[no_mangle]
 pub extern "C" fn dataset_feature_sampling(
     dataset: *mut CDataset,
@@ -172,6 +196,8 @@ pub extern "C" fn dataset_feature_sampling(
     )
 }
 
+/// # Safety
+/// This is FFI, don't use from Rust.
 #[no_mangle]
 pub extern "C" fn dataset_query_json(
     dataset: *mut c_void,
@@ -184,11 +210,16 @@ pub extern "C" fn dataset_query_json(
     ))
 }
 
+/// # Safety
+/// This is FFI, don't use from Rust.
 #[no_mangle]
 pub extern "C" fn query_json(json_cmd_str: *const c_void) -> *const c_void {
     result_to_json(result_exec_json(accept_str("query_json_str", json_cmd_str)))
 }
 
+/// # Safety
+/// This is FFI, don't use from Rust.
+#[allow(clippy::not_unsafe_ptr_arg_deref)]
 #[no_mangle]
 pub extern "C" fn make_dense_dataset_f32_f64_i64(
     n: usize,
@@ -208,6 +239,8 @@ pub extern "C" fn make_dense_dataset_f32_f64_i64(
     )
 }
 
+/// # Safety
+/// This is FFI, don't use from Rust.
 #[no_mangle]
 pub extern "C" fn train_model(
     train_request_json: *mut c_void,
@@ -219,6 +252,8 @@ pub extern "C" fn train_model(
     result_to_c(result_train_model(request, dataset).map(|actual| CModel { actual }))
 }
 
+/// # Safety
+/// This is FFI, don't use from Rust.
 #[no_mangle]
 pub extern "C" fn model_from_json(json_str: *const c_void) -> *const CResult {
     result_to_c(
@@ -227,6 +262,8 @@ pub extern "C" fn model_from_json(json_str: *const c_void) -> *const CResult {
     )
 }
 
+/// # Safety
+/// This is FFI, don't use from Rust.
 #[no_mangle]
 pub extern "C" fn model_query_json(
     model: *const c_void,
@@ -240,6 +277,8 @@ pub extern "C" fn model_query_json(
 }
 
 /// returns json of qid->score for evaluator; or error-json.
+/// # Safety
+/// This is FFI, don't use from Rust.
 #[no_mangle]
 pub extern "C" fn evaluate_by_query(
     model: *const CModel,
@@ -254,6 +293,8 @@ pub extern "C" fn evaluate_by_query(
     result_to_json(result_evaluate_by_query(model, dataset, qrel, evaluator))
 }
 
+/// # Safety
+/// This is FFI, don't use from Rust.
 #[no_mangle]
 pub extern "C" fn predict_scores(model: *const CModel, dataset: *const CDataset) -> *const c_void {
     let model: Option<&CModel> = unsafe { (model as *const CModel).as_ref() };
@@ -261,6 +302,8 @@ pub extern "C" fn predict_scores(model: *const CModel, dataset: *const CDataset)
     result_to_json(result_predict_scores(model, dataset))
 }
 
+/// # Safety
+/// This is FFI, don't use from Rust.
 #[no_mangle]
 pub extern "C" fn predict_to_trecrun(
     model: *const CModel,

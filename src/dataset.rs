@@ -58,7 +58,7 @@ impl RankingDataset for DatasetRef {
         Some(self.data.get_ref().unwrap_or(self.clone()))
     }
     fn is_sampled(&self) -> bool {
-        return self.data.is_sampled()
+        self.data.is_sampled()
     }
     fn features(&self) -> Vec<FeatureId> {
         self.data.features()
@@ -118,7 +118,7 @@ impl RankingDataset for SampledDatasetRef {
         self.parent.get_ref()
     }
     fn is_sampled(&self) -> bool {
-        return true
+        true
     }
     fn features(&self) -> Vec<FeatureId> {
         self.features.clone()
@@ -166,7 +166,7 @@ impl RankingDataset for SampledDatasetRef {
     fn try_lookup_feature(&self, name_or_num: &str) -> Result<FeatureId, Box<dyn Error>> {
         let fid = self.parent.try_lookup_feature(name_or_num)?;
         if self.features.contains(&fid) {
-            return Ok(fid);
+            Ok(fid)
         } else {
             Err(format!(
                 "Feature not in subsample: {}: {}",
@@ -259,7 +259,7 @@ impl LoadedRankingDataset {
             panic!("Cannot apply normalization twice!");
         }
         for inst in self.instances.iter_mut() {
-            inst.features.apply_normalization(&normalizer);
+            inst.features.apply_normalization(normalizer);
         }
         self.normalization = Some(normalizer.clone());
     }
@@ -288,18 +288,14 @@ impl RankingDataset for LoadedRankingDataset {
     }
     fn instances(&self) -> Vec<InstanceId> {
         (0..self.instances.len())
-            .map(|i| InstanceId::from_index(i))
+            .map(InstanceId::from_index)
             .collect()
     }
     fn instances_by_query(&self) -> HashMap<String, Vec<InstanceId>> {
         self.data_by_query.clone()
     }
     fn queries(&self) -> Vec<String> {
-        self.data_by_query
-            .iter()
-            .map(|(k, _v)| k)
-            .cloned()
-            .collect()
+        self.data_by_query.keys().cloned().collect()
     }
     fn feature_name(&self, fid: FeatureId) -> String {
         self.feature_names
@@ -314,16 +310,13 @@ impl RankingDataset for LoadedRankingDataset {
         model.score(&self.instances[id.to_index()].features)
     }
     fn gain(&self, id: InstanceId) -> NotNan<f32> {
-        self.instances[id.to_index()].gain.clone()
+        self.instances[id.to_index()].gain
     }
     fn query_id(&self, id: InstanceId) -> &str {
         self.instances[id.to_index()].qid.as_str()
     }
     fn document_name(&self, id: InstanceId) -> Option<&str> {
-        self.instances[id.to_index()]
-            .docid
-            .as_ref()
-            .map(|s| s.as_str())
+        self.instances[id.to_index()].docid.as_deref()
     }
     fn try_lookup_feature(&self, name_or_num: &str) -> Result<FeatureId, Box<dyn Error>> {
         try_lookup_feature(self, &self.feature_names, name_or_num)
@@ -352,7 +345,7 @@ pub fn try_lookup_feature(
 
     let num = name_or_num
         .parse::<usize>()
-        .map(|id| FeatureId::from_index(id))
+        .map(FeatureId::from_index)
         .map_err(|_| {
             format!(
                 "Could not turn {} into a name or number in this dataset.",
@@ -360,11 +353,11 @@ pub fn try_lookup_feature(
             )
         })?;
     if let Some(idx) = features.iter().position(|n| *n == num) {
-        return Ok(FeatureId::from_index(idx));
+        Ok(FeatureId::from_index(idx))
     } else {
-        return Err(format!(
+        Err(format!(
             "Feature #{} not present in actual dataset!",
             name_or_num
-        ))?;
+        ))?
     }
 }

@@ -3,13 +3,13 @@ use std::cmp::Ordering;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[repr(transparent)]
-pub struct FeatureId(u32);
+pub struct FeatureId(pub(crate) u32);
 
 impl FeatureId {
     pub fn from_index(idx: usize) -> Self {
         Self(idx as u32)
     }
-    pub fn to_index(&self) -> usize {
+    pub fn to_index(self) -> usize {
         self.0 as usize
     }
 }
@@ -21,7 +21,7 @@ impl InstanceId {
     pub fn from_index(idx: usize) -> Self {
         Self(idx as u32)
     }
-    pub fn to_index(&self) -> usize {
+    pub fn to_index(self) -> usize {
         self.0 as usize
     }
 }

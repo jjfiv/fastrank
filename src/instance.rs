@@ -1,3 +1,5 @@
+use std::cmp::Ordering;
+
 use crate::libsvm;
 use crate::normalizers::Normalizer;
 use crate::FeatureId;
@@ -13,9 +15,7 @@ impl Features {
     pub fn ids(&self) -> Vec<FeatureId> {
         let mut features: Vec<FeatureId> = Vec::new();
         match self {
-            Features::Dense32(arr) => {
-                features.extend((0..arr.len()).map(|idx| FeatureId::from_index(idx)))
-            }
+            Features::Dense32(arr) => features.extend((0..arr.len()).map(FeatureId::from_index)),
             Features::Sparse32(arr) => features.extend(arr.iter().map(|(idx, _)| *idx)),
         }
         features
@@ -64,10 +64,10 @@ impl FeatureRead for Features {
             Features::Dense32(arr) => arr.get(idx.to_index()).map(|val| f64::from(*val)),
             Features::Sparse32(features) => {
                 for (fidx, val) in features.iter() {
-                    if *fidx == idx {
-                        return Some(f64::from(*val));
-                    } else if *fidx > idx {
-                        break;
+                    match fidx.cmp(&idx) {
+                        Ordering::Less => continue,
+                        Ordering::Equal => return Some(f64::from(*val)),
+                        Ordering::Greater => break,
                     }
                 }
                 None
@@ -127,5 +127,39 @@ impl Instance {
             docid: libsvm.comment,
             features,
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::core::FeatureId;
+
+    use super::{FeatureRead, Features};
+
+    fn assert_opt_flt_eq(lhs: Option<f64>, rhs: Option<f64>) {
+        match (lhs, rhs) {
+            (Some(lhs), Some(rhs)) => {
+                if (lhs - rhs).abs() > 1e-7 {
+                    panic!("{lhs} != {rhs}")
+                }
+            }
+            (None, None) => {}
+            (x, y) => panic!("{x:?} != {y:?}"),
+        }
+    }
+
+    #[test]
+    fn test_sparse() {
+        let alt = Features::Sparse32(vec![
+            (FeatureId(1), 1.0),
+            (FeatureId(3), 3.0),
+            (FeatureId(5), 5.0),
+        ]);
+        assert_opt_flt_eq(alt.get(FeatureId(1)), Some(1.0));
+        assert_opt_flt_eq(alt.get(FeatureId(2)), None);
+        assert_opt_flt_eq(alt.get(FeatureId(3)), Some(3.0));
+        assert_opt_flt_eq(alt.get(FeatureId(4)), None);
+        assert_opt_flt_eq(alt.get(FeatureId(5)), Some(5.0));
+        assert_opt_flt_eq(alt.get(FeatureId(6)), None);
     }
 }

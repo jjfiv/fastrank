@@ -30,7 +30,7 @@ pub fn label_stats(
     label_stats.finish()
 }
 fn compute_output(ids: &[InstanceId], dataset: &dyn RankingDataset) -> NotNan<f64> {
-    if ids.len() == 0 {
+    if ids.is_empty() {
         return NotNan::new(0.0).unwrap();
     }
     let mut gain_sum = 0.0;
@@ -50,7 +50,7 @@ fn squared_error(ids: &[InstanceId], dataset: &dyn RankingDataset) -> NotNan<f64
     NotNan::new(sum_sq_errors).unwrap()
 }
 fn gini_impurity(ids: &[InstanceId], dataset: &dyn RankingDataset) -> NotNan<f64> {
-    if ids.len() == 0 {
+    if ids.is_empty() {
         return NotNan::new(0.0).unwrap();
     }
     let count = ids.len() as f64;
@@ -72,7 +72,7 @@ fn plogp(x: f64) -> NotNan<f64> {
     }
 }
 fn entropy(ids: &[InstanceId], dataset: &dyn RankingDataset) -> NotNan<f64> {
-    if ids.len() == 0 {
+    if ids.is_empty() {
         return NotNan::new(0.0).unwrap();
     }
     let count = ids.len() as f64;
@@ -83,8 +83,7 @@ fn entropy(ids: &[InstanceId], dataset: &dyn RankingDataset) -> NotNan<f64> {
         .count();
     let p_yes = (positive as f64) / count;
     let p_no = (count - (positive as f64)) / count;
-    let entropy = -plogp(p_yes) - plogp(p_no);
-    entropy
+    -plogp(p_yes) - plogp(p_no)
 }
 
 impl SplitSelectionStrategy {
@@ -348,10 +347,7 @@ pub fn learn_decision_tree(params: &RandomForestParams, dataset: &DatasetRef) ->
     let root = learn_recursive(params, dataset, &step);
     match root {
         Ok(tree) => tree,
-        Err(_e) => {
-            TreeNode::LeafNode(step.to_output(dataset))
-            //panic!("{:?} fids={:?} N={}", _e, step.features, step.instances.len())
-        }
+        Err(_e) => TreeNode::LeafNode(step.to_output(dataset)),
     }
 }
 

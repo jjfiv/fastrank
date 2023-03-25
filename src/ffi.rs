@@ -1,5 +1,4 @@
 use libc::{c_char, c_void};
-use serde_json;
 use std::error::Error;
 use std::ffi::CStr;
 use std::ffi::CString;
@@ -56,7 +55,7 @@ pub(crate) fn result_to_json(rust_result: Result<String, Box<dyn Error>>) -> *co
 }
 
 pub(crate) fn result_to_c<T>(rust_result: Result<T, Box<dyn Error>>) -> *const CResult {
-    let mut c_result = Box::new(CResult::default());
+    let mut c_result = Box::<CResult>::default();
     match rust_result {
         Ok(item) => {
             let output = Box::new(item);
@@ -110,7 +109,7 @@ pub(crate) fn result_load_ranksvm_format(
 ) -> Result<DatasetRef, Box<dyn Error>> {
     let feature_names = feature_names_path
         .transpose()?
-        .map(|path| dataset::load_feature_names_json(path))
+        .map(dataset::load_feature_names_json)
         .transpose()?;
     let data_path: &str = data_path?;
     Ok(DatasetRef::load_libsvm(data_path, feature_names.as_ref())
@@ -153,7 +152,13 @@ pub(crate) fn result_dataset_query_json(
     };
 
     let response = match query_str? {
-        "is_sampled" => if dataset.reference.is_sampled() { "true".to_string() } else { "false".to_string() },
+        "is_sampled" => {
+            if dataset.reference.is_sampled() {
+                "true".to_string()
+            } else {
+                "false".to_string()
+            }
+        }
         "num_features" => serde_json::to_string(&dataset.reference.n_dim())?,
         "feature_ids" => serde_json::to_string(&dataset.reference.features())?,
         "num_instances" => serde_json::to_string(&dataset.reference.instances().len())?,
@@ -185,7 +190,7 @@ pub(crate) fn result_train_model(
         Some(d) => d,
         None => Err("Dataset pointer is null!")?,
     };
-    Ok(json_api::do_training(train_request?, &dataset.reference)?)
+    json_api::do_training(train_request?, &dataset.reference)
 }
 
 pub(crate) fn result_model_query_json(
