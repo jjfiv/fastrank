@@ -1,6 +1,17 @@
+[project]
+name = "fastrank"
+requires-dist = ["attrs", "cffi", "numpy"]
+classifier = [
+  "Programming Language :: Python :: 3.6",
+  "License :: OSI Approved :: MIT License",
+  "Operating System :: OS Independent",
+]
+dependencies = ["cffi"]
+
 [build-system]
-requires = ["maturin", "cffi"]
+requires = ["maturin>=0.14,<0.15", "cffi"]
 build-backend = "maturin"
 
 [tool.maturin]
 bindings = "cffi"
+

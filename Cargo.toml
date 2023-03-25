@@ -26,10 +26,3 @@ serde_derive = "1"
 ordered-float = { version = "3.0", features = ["serde"] }
 fast-float = "0.2"
 
-[package.metadata.maturin]
-requires-dist = ["attrs", "cffi", "numpy"]
-classifier = [
-  "Programming Language :: Python :: 3.6",
-  "License :: OSI Approved :: MIT License",
-  "Operating System :: OS Independent",
-]
