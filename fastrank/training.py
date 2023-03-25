@@ -1,66 +1,66 @@
-import attr
-from typing import Union, Any, Dict
+from typing import Union, Any, Dict, Optional
 import random
 from .clib import CQRel, query_json
+from dataclasses import dataclass, field, asdict
 
 
-@attr.s
+@dataclass
 class CoordinateAscentParams:
     """
     This class represents the configuration and parameters available for FastRank's CoordinateAscent Model.
     """
 
-    num_restarts = attr.ib(type=int, default=5)
-    num_max_iterations = attr.ib(type=int, default=25)
-    step_base = attr.ib(type=float, default=0.05)
-    step_scale = attr.ib(type=float, default=2.0)
-    tolerance = attr.ib(type=float, default=0.001)
-    normalize = attr.ib(type=bool, default=True)
-    init_random = attr.ib(type=bool, default=True)
-    output_ensemble = attr.ib(type=bool, default=False)
-    seed = attr.ib(type=int, default=random.randint(0, (1 << 64) - 1))
-    quiet = attr.ib(type=bool, default=False)
+    num_restarts: int = 5
+    num_max_iterations: int = 25
+    step_base: float = 0.05
+    step_scale: float = 2.0
+    tolerance: float = 0.001
+    normalize: bool = True
+    init_random: bool = True
+    output_ensemble: bool = False
+    seed: int = random.randint(0, (1 << 64) - 1)
+    quiet: bool = False
 
     def name(self):
         return "CoordinateAscent"
 
     def to_dict(self):
-        return attr.asdict(self, recurse=True)
+        return asdict(self)
 
     @staticmethod
     def from_dict(params) -> "CoordinateAscentParams":
         return CoordinateAscentParams(**params)
 
 
-@attr.s
+@dataclass
 class RandomForestParams:
     """
     This class represents the configuration and parameters available for FastRank's Random Forest Model.
     """
 
-    num_trees = attr.ib(type=int, default=100)
-    weight_trees = attr.ib(type=bool, default=True)
-    split_method = attr.ib(type=str, default="SquaredError")
-    instance_sampling_rate = attr.ib(type=float, default=0.5)
-    feature_sampling_rate = attr.ib(type=float, default=0.25)
-    min_leaf_support = attr.ib(type=int, default=10)
-    split_candidates = attr.ib(type=int, default=3)
-    max_depth = attr.ib(type=int, default=8)
-    seed = attr.ib(type=int, default=random.randint(0, (1 << 64) - 1))
-    quiet = attr.ib(type=bool, default=False)
+    num_trees: int = 100
+    weight_trees: bool = True
+    split_method: str = "SquaredError"
+    instance_sampling_rate: float = 0.5
+    feature_sampling_rate: float = 0.25
+    min_leaf_support: int = 10
+    split_candidates: int = 3
+    max_depth: int = 8
+    seed: int = random.randint(0, (1 << 64) - 1)
+    quiet: bool = False
 
     def name(self):
         return "RandomForest"
 
     def to_dict(self):
-        return attr.asdict(self, recurse=True)
+        return asdict(self)
 
     @staticmethod
     def from_dict(params) -> "RandomForestParams":
         return RandomForestParams(**params)
 
 
-@attr.s
+@dataclass
 class TrainRequest:
     """
     This class represents the configuration and parameters available to train a model.
@@ -71,12 +71,11 @@ class TrainRequest:
     - `~random_forest`
     """
 
-    measure = attr.ib(type=str, default="ndcg")
-    params = attr.ib(
-        type=Union[CoordinateAscentParams, RandomForestParams],
-        factory=CoordinateAscentParams,
+    measure: str = "ndcg"
+    params: Union[CoordinateAscentParams, RandomForestParams] = field(
+        default_factory=CoordinateAscentParams
     )
-    judgments = attr.ib(type=CQRel, default=None)
+    judgments: Optional[CQRel] = None
 
     def to_dict(self) -> Dict[str, Any]:
         """

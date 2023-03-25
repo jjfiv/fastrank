@@ -27,5 +27,6 @@ Cargo.lock
 *.dylib
 .mypy_cache
 *.tar.gz
-examples/msn30k*.gz
+examples/msn30k*
 fastrank/fastrank
+/dist
