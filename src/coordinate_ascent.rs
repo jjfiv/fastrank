@@ -94,7 +94,7 @@ fn optimize_inner(
     let quiet = params.quiet;
     let tolerance = NotNan::new(params.tolerance).unwrap();
 
-    let fids: Vec<FeatureId> = data.features().clone();
+    let fids: Vec<FeatureId> = data.features();
     let model_dim = (fids
         .iter()
         .max()
@@ -159,13 +159,11 @@ fn optimize_inner(
                         model.weights[current_feature.to_index()] = w;
                         let score = evaluator.evaluate_mean(&model);
 
-                        if current_best.replace_if_better(score, model.clone()) {
-                            if !quiet {
-                                println!(
-                                    "{:4}|{:<16}|{:>9.3}|{:>9.3}",
-                                    restart_id, current_feature_name, w, score
-                                );
-                            }
+                        if current_best.replace_if_better(score, model.clone()) && !quiet {
+                            println!(
+                                "{:4}|{:<16}|{:>9.3}|{:>9.3}",
+                                restart_id, current_feature_name, w, score
+                            );
                         }
 
                         step *= params.step_scale;
@@ -201,8 +199,8 @@ impl CoordinateAscentParams {
         let mut rand = Rand64::new(self.seed.into());
 
         assert!(data.n_dim() > 0);
-        assert!(data.instances().len() > 0);
-        assert!(data.queries().len() > 0);
+        assert!(!data.instances().is_empty());
+        assert!(!data.queries().is_empty());
 
         if !self.quiet {
             println!("---------------------------");

@@ -85,17 +85,13 @@ impl RankingDataset for DenseDataset {
         false
     }
     fn features(&self) -> Vec<FeatureId> {
-        (0..self.n_features)
-            .map(|i| FeatureId::from_index(i))
-            .collect()
+        (0..self.n_features).map(FeatureId::from_index).collect()
     }
     fn n_dim(&self) -> u32 {
         self.n_features as u32
     }
     fn instances(&self) -> Vec<InstanceId> {
-        (0..self.n_instances)
-            .map(|i| InstanceId::from_index(i))
-            .collect()
+        (0..self.n_instances).map(InstanceId::from_index).collect()
     }
     fn instances_by_query(&self) -> HashMap<String, Vec<InstanceId>> {
         let mut ref_map = HashMap::<&str, Vec<InstanceId>>::new();

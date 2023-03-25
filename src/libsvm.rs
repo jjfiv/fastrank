@@ -195,6 +195,12 @@ impl Instance {
     }
 }
 
+impl Default for Instance {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 /// This class implements an iterator over a file of libsvm/ranklib style instances.
 pub struct InstanceIter {
     reader: Box<dyn io::BufRead>,
@@ -232,7 +238,7 @@ impl Iterator for InstanceIter {
         match amt_read {
             Ok(amt) => {
                 // All done?
-                if amt <= 0 {
+                if amt == 0 {
                     return None;
                 }
             }
@@ -275,30 +281,35 @@ pub fn collect_reader(reader: Box<dyn io::BufRead>) -> Result<Vec<Instance>, Fil
 mod tests {
     use super::ParseError::*;
     use super::*;
+    use std::cmp::Ordering;
     use std::result::Result;
 
     /// This calculates the dot product between two instances efficiently, given that their
     /// features are sorted already.
     fn dot_product(lhs: &Instance, rhs: &Instance) -> f32 {
-        let ref a = lhs.features;
-        let ref b = rhs.features;
+        let a = &lhs.features;
+        let b = &rhs.features;
         let mut i = 0;
         let mut j = 0;
 
         let mut sum = 0.0;
         while i < a.len() && j < b.len() {
-            if a[i].idx < b[j].idx {
-                i += 1;
-                continue;
-            } else if b[j].idx < a[i].idx {
-                j += 1;
-                continue;
-            } else {
-                // both have feature
-                assert_eq!(a[i].idx, b[j].idx);
-                sum += a[i].value * b[j].value;
-                i += 1;
-                j += 1;
+            match a[i].idx.cmp(&b[j].idx) {
+                Ordering::Less => {
+                    i += 1;
+                    continue;
+                }
+                Ordering::Greater => {
+                    j += 1;
+                    continue;
+                }
+                Ordering::Equal => {
+                    // both have feature
+                    assert_eq!(a[i].idx, b[j].idx);
+                    sum += a[i].value * b[j].value;
+                    i += 1;
+                    j += 1;
+                }
             }
         }
         sum
@@ -315,7 +326,7 @@ mod tests {
 
     /// Compare floats with a given epsilon.
     fn flt_eq(lhs: f32, rhs: f32) -> bool {
-        return (lhs - rhs).abs() < 1e-7;
+        (lhs - rhs).abs() < 1e-7
     }
 
     #[test]
@@ -381,9 +392,6 @@ mod tests {
                 }
             };
             false
-        }
-        fn ne(&self, other: &ParseError) -> bool {
-            !self.eq(other)
         }
     }
 

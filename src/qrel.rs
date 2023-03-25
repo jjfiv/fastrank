@@ -73,7 +73,7 @@ pub fn read_file(path: &str) -> Result<QuerySetJudgments, Box<dyn std::error::Er
     loop {
         num += 1;
         let amt = reader.read_line(&mut line)?;
-        if amt <= 0 {
+        if amt == 0 {
             break;
         }
         let row: Vec<&str> = line.split_whitespace().collect();
@@ -88,7 +88,7 @@ pub fn read_file(path: &str) -> Result<QuerySetJudgments, Box<dyn std::error::Er
 
         output
             .entry(qid)
-            .or_insert_with(|| HashMap::new())
+            .or_insert_with(HashMap::default)
             .insert(docid, gain);
         line.clear();
     }

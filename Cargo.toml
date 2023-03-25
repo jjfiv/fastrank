@@ -2,7 +2,7 @@
 name = "fastrank"
 version = "0.9.0-dev"
 authors = ["John Foley <git@jjfoley.me>"]
-edition = "2018"
+edition = "2021"
 readme = "README.md"
 description = "FastRank Learning to Rank Library written in Rust."
 homepage = "https://github.com/jjfiv/fastrank"

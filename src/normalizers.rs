@@ -92,7 +92,7 @@ impl Normalizer {
                 }
             }
             Normalizer::SigmoidNormalizer() => match NotNan::new(sigmoid(val)) {
-                Ok(out) => return out.into_inner() as f32,
+                Ok(out) => return out.into_inner(),
                 Err(_) => panic!(
                     "Normalization.sigmoid NaN: {} {} {} {} {}",
                     val,

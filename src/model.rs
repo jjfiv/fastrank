@@ -64,7 +64,7 @@ pub enum TreeNode {
 impl Model for TreeNode {
     fn score(&self, features: &dyn FeatureRead) -> NotNan<f64> {
         match self {
-            TreeNode::LeafNode(score) => score.clone(),
+            TreeNode::LeafNode(score) => *score,
             TreeNode::FeatureSplit {
                 fid,
                 split,

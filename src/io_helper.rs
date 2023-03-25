@@ -17,7 +17,7 @@ use zstd;
 /// Open a file based on its extension; seamlessly supporting different compression styles.
 pub fn open_reader(file_name: &str) -> Result<Box<dyn BufRead>> {
     let fp = File::open(file_name)?;
-    return if file_name.ends_with(".zst") {
+    if file_name.ends_with(".zst") {
         Ok(Box::new(BufReader::new(zstd::Decoder::new(fp)?)))
     } else if file_name.ends_with(".gz") {
         Ok(Box::new(BufReader::new(MultiGzDecoder::new(fp))))
@@ -25,12 +25,12 @@ pub fn open_reader(file_name: &str) -> Result<Box<dyn BufRead>> {
         Ok(Box::new(BufReader::new(BzDecoder::new(fp))))
     } else {
         Ok(Box::new(BufReader::new(fp)))
-    };
+    }
 }
 
 pub fn open_writer(file_name: &str) -> Result<Box<dyn Write>> {
     let fp = File::create(file_name)?;
-    return if file_name.ends_with(".zst") {
+    if file_name.ends_with(".zst") {
         Ok(Box::new(BufWriter::new(zstd::Encoder::new(fp, 0)?)))
     } else if file_name.ends_with(".gz") {
         Ok(Box::new(BufWriter::new(GzEncoder::new(
@@ -44,5 +44,5 @@ pub fn open_writer(file_name: &str) -> Result<Box<dyn Write>> {
         ))))
     } else {
         Ok(Box::new(BufWriter::new(fp)))
-    };
+    }
 }

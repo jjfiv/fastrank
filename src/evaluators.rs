@@ -20,13 +20,13 @@ pub struct RankedInstance {
 
 impl PartialEq for RankedInstance {
     fn eq(&self, other: &RankedInstance) -> bool {
-        self.cmp(&other) == Ordering::Equal
+        self.cmp(other) == Ordering::Equal
     }
 }
 
 impl PartialOrd for RankedInstance {
     fn partial_cmp(&self, other: &RankedInstance) -> Option<Ordering> {
-        Some(self.cmp(&other))
+        Some(self.cmp(other))
     }
 }
 
@@ -146,9 +146,9 @@ impl SetEvaluator {
         Ok(SetEvaluator {
             dataset: dataset.clone(),
             evaluator: match name.as_str() {
-                "ap" | "map" => Arc::new(AveragePrecision::new(dataset, judgments.clone())),
+                "ap" | "map" => Arc::new(AveragePrecision::new(dataset, judgments)),
                 "rr" | "mrr" => Arc::new(ReciprocalRank),
-                "ndcg" => Arc::new(NDCG::new(depth, dataset, judgments.clone())),
+                "ndcg" => Arc::new(NDCG::new(depth, dataset, judgments)),
                 _ => Err(format!("Invalid training measure: \"{}\"", orig_name))?,
             },
         })
@@ -172,7 +172,7 @@ impl SetEvaluator {
 
     pub fn evaluate_mean(&self, model: &dyn Model) -> f64 {
         let scores = self.evaluate_to_vec(model);
-        if scores.len() == 0 {
+        if scores.is_empty() {
             return 0.0;
         }
         let n = scores.len() as f64;
@@ -180,7 +180,7 @@ impl SetEvaluator {
         for s in scores {
             sum += s;
         }
-        return sum / n;
+        sum / n
     }
 
     pub fn evaluate_to_map(&self, model: &dyn Model) -> HashMap<String, f64> {
@@ -198,7 +198,7 @@ impl SetEvaluator {
                 .collect();
             // Sort largest to smallest:
             ranked_list.sort_unstable();
-            scores.insert(qid.to_owned(), self.evaluator.score(&qid, &ranked_list));
+            scores.insert(qid.to_owned(), self.evaluator.score(qid, &ranked_list));
         }
         scores
     }
@@ -218,7 +218,7 @@ impl SetEvaluator {
                 .collect();
             // Sort largest to smallest:
             ranked_list.sort_unstable();
-            scores.push(self.evaluator.score(&qid, &ranked_list));
+            scores.push(self.evaluator.score(qid, &ranked_list));
         }
         scores
     }
@@ -243,13 +243,12 @@ impl Evaluator for ReciprocalRank {
             .iter()
             .map(|ri| ri.is_relevant())
             .enumerate()
-            .filter(|(_, rel)| *rel)
-            .nth(0)
+            .find(|(_, rel)| *rel)
             .map(|(i, _)| i + 1)
         {
             recip_rank = 1.0 / (rel_rank as f64)
         }
-        return recip_rank;
+        recip_rank
     }
 }
 
@@ -267,7 +266,7 @@ fn compute_dcg(gains: &[NotNan<f32>], depth: Option<usize>, ideal: bool) -> f64 
     for (i, gain) in gain_vector.into_iter().enumerate() {
         let i = i as f64;
         let gain = gain.into_inner() as f64;
-        dcg += ((2.0 as f64).powf(gain) - 1.0) / (i + 2.0).log2();
+        dcg += (2.0_f64.powf(gain) - 1.0) / (i + 2.0).log2();
     }
     dcg
 }

@@ -84,10 +84,10 @@ impl DatasetSampling for DatasetRef {
                 missing_features.insert(fid);
             }
         }
-        if missing_features.len() > 0 {
+        if !missing_features.is_empty() {
             Err(format!("Missing Features: {:?}", missing_features))
-        } else if keep_features.len() == 0 {
-            Err(format!("No Features!"))
+        } else if keep_features.is_empty() {
+            Err("No Features!".to_string())
         } else {
             Ok(SampledDatasetRef {
                 parent: self.get_ref_or_clone(),
@@ -121,7 +121,7 @@ impl DatasetSampling for DatasetRef {
     ) -> (SampledDatasetRef, SampledDatasetRef) {
         let mut qs = self.queries();
         let n_test_qs = ((qs.len() as f64) * test_fraction) as usize;
-        if n_test_qs <= 0 {
+        if n_test_qs == 0 {
             panic!(
                 "Must be some testing data selected: frac={}!",
                 test_fraction
