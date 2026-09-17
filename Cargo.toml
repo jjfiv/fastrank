@@ -15,8 +15,8 @@ crate-type = ["cdylib"]
 
 [dependencies]
 libc = "0.2.189"
-# oorandom is pinned to prevent seeds from changing across versions of fastrank
-oorandom = "=11.1.0"
+# fastrand is pinned to prevent seeds from changing across versions of fastrank
+fastrand = "=2.5.0"
 bzip2 = "0.6.1"
 flate2 = "1.1.10"
 zstd = "0.14.0"

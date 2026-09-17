@@ -6,7 +6,7 @@ use crate::sampling::DatasetSampling;
 use crate::stats;
 use crate::Scored;
 use crate::{FeatureId, InstanceId};
-use oorandom::Rand64;
+use fastrand::Rng;
 use ordered_float::NotNan;
 use rayon::prelude::*;
 use std::cmp;
@@ -140,10 +140,10 @@ pub struct RandomForestParams {
 
 impl Default for RandomForestParams {
     fn default() -> Self {
-        let mut rand = Rand64::new(0xdeadbeef);
+        let mut rand = Rng::with_seed(0xdeadbeef);
         Self {
             weight_trees: false,
-            seed: rand.rand_u64(),
+            seed: rand.u64(..),
             split_method: SplitSelectionStrategy::SquaredError(),
             quiet: false,
             num_trees: 100,
@@ -290,9 +290,9 @@ pub fn learn_ensemble(
     dataset: &DatasetRef,
     evaluator: &SetEvaluator,
 ) -> WeightedEnsemble {
-    let mut rand = Rand64::new(params.seed.into());
+    let mut rand = Rng::with_seed(params.seed);
     let seeds: Vec<(u32, u64)> = (0..params.num_trees)
-        .map(|i| (i, rand.rand_u64()))
+        .map(|i| (i, rand.u64(..)))
         .collect();
 
     let mut trees: Vec<Scored<TreeNode>> = Vec::new();
@@ -303,7 +303,7 @@ pub fn learn_ensemble(
     }
 
     trees.par_extend(seeds.par_iter().map(|(idx, rand_seed)| {
-        let mut local_rand = Rand64::new((*rand_seed).into());
+        let mut local_rand = Rng::with_seed(*rand_seed);
         let subsample = dataset
             .random_sample(
                 params.feature_sampling_rate,
@@ -459,7 +459,7 @@ mod test {
             }
         }
         // If this assertion fails and you're OK with it, you just broke SemVer; upgrade major version.
-        assert_float_eq("means[0] = predefined", means[0], 0.4367914517387043);
+        assert_float_eq("means[0] = predefined", means[0], 0.6531308292268412);
     }
 
     #[test]
