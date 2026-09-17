@@ -1,5 +1,6 @@
 [project]
 name = "fastrank"
+dynamic = ["version"]
 requires-python = ">=3.9"
 classifiers = [
   "Programming Language :: Python :: 3.9",
@@ -14,8 +15,14 @@ classifiers = [
 dependencies = ["cffi", "numpy"]
 
 [build-system]
-requires = ["maturin>=0.14,<0.15", "cffi"]
+requires = ["maturin>=1.8,<2.0", "cffi"]
 build-backend = "maturin"
 
 [tool.maturin]
 bindings = "cffi"
+include = ["tests", "examples"]
+
+[tool.cibuildwheel]
+test-sources = ["tests", "examples"]
+test-requires = ["cffi", "numpy", "scikit-learn"]
+test-command = "python -I -m unittest discover -s tests -v"
