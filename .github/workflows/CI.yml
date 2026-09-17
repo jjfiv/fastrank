@@ -54,8 +54,6 @@ jobs:
 
       - name: Build wheels and test them
         uses: pypa/cibuildwheel@v4.2.1
-        env:
-          CIBW_SKIP: "*t-* pp*" # skip free-threading wheels and PyPy wheels
 
       - name: Upload wheels
         uses: actions/upload-artifact@v7

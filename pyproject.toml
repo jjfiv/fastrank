@@ -1,27 +1,52 @@
+[build-system]
+requires = ["maturin>=1.8,<2.0", "cffi"]
+build-backend = "maturin"
+
 [project]
 name = "fastrank"
 dynamic = ["version"]
 requires-python = ">=3.10"
 classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Intended Audience :: Developers",
+  "Intended Audience :: Science/Research",
+  "Programming Language :: Rust",
+  "Programming Language :: Python :: 3",
   "Programming Language :: Python :: 3.10",
   "Programming Language :: Python :: 3.11",
   "Programming Language :: Python :: 3.12",
   "Programming Language :: Python :: 3.13",
   "Programming Language :: Python :: 3.14",
+  "Topic :: Scientific/Engineering",
+  "Topic :: Software Development :: Libraries",
   "License :: OSI Approved :: MIT License",
   "Operating System :: OS Independent",
 ]
 dependencies = ["cffi", "numpy"]
 
-[build-system]
-requires = ["maturin>=1.8,<2.0", "cffi"]
-build-backend = "maturin"
+[project.urls]
+Homepage = "https://github.com/jjfiv/fastrank"
+Repository = "https://github.com/jjfiv/fastrank"
+Issues = "https://github.com/jjfiv/fastrank/issues"
 
 [tool.maturin]
 bindings = "cffi"
 include = ["tests", "examples"]
 
 [tool.cibuildwheel]
+# Skip free-threaded, PyPy (the cffi extension targets CPython), musllinux, and
+# the slow/rare 32-bit targets to keep the wheel matrix lean.
+skip = ["*t-*", "pp*", "*-musllinux*", "*_i686", "*-win32"]
+build-frontend = "build"
 test-sources = ["tests", "examples"]
 test-requires = ["cffi", "numpy", "scikit-learn"]
 test-command = "python -I -m unittest discover -s tests -v"
+
+[tool.cibuildwheel.macos]
+archs = ["native"]
+
+[tool.cibuildwheel.linux]
+archs = ["native"]
+
+[tool.cibuildwheel.windows]
+archs = ["AMD64"]
