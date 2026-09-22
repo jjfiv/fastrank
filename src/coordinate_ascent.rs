@@ -4,7 +4,7 @@ use crate::model::{DenseLinearRankingModel, ModelEnum, WeightedEnsemble};
 use crate::randutil::shuffle;
 use crate::FeatureId;
 use crate::Scored;
-use oorandom::Rand64;
+use fastrand::Rng;
 use ordered_float::NotNan;
 use rayon::prelude::*;
 
@@ -24,14 +24,14 @@ pub struct CoordinateAscentParams {
 
 impl Default for CoordinateAscentParams {
     fn default() -> Self {
-        let mut rand = Rand64::new(0xdeadbeef);
+        let mut rand = Rng::with_seed(0xdeadbeef);
         Self {
             num_restarts: 5,
             num_max_iterations: 25,
             step_base: 0.05,
             step_scale: 2.0,
             tolerance: 0.001,
-            seed: rand.rand_u64(),
+            seed: rand.u64(..),
             normalize: true,
             quiet: false,
             init_random: true,
@@ -47,10 +47,10 @@ impl DenseLinearRankingModel {
         }
     }
 
-    fn reset(&mut self, init_random: bool, rand: &mut Rand64, valid_features: &[FeatureId]) {
+    fn reset(&mut self, init_random: bool, rand: &mut Rng, valid_features: &[FeatureId]) {
         if init_random {
             for i in valid_features.iter() {
-                self.weights[i.to_index()] = (rand.rand_float() * 2.0) - 1.0;
+                self.weights[i.to_index()] = (rand.f64() * 2.0) - 1.0;
             }
         } else {
             self.reset_uniform(valid_features);
@@ -88,7 +88,7 @@ fn optimize_inner(
     restart_id: u32,
     data: &dyn RankingDataset,
     evaluator: &SetEvaluator,
-    mut rand: Rand64,
+    mut rand: Rng,
     params: &CoordinateAscentParams,
 ) -> Scored<DenseLinearRankingModel> {
     let quiet = params.quiet;
@@ -196,7 +196,7 @@ fn optimize_inner(
 
 impl CoordinateAscentParams {
     pub fn learn(&self, data: &dyn RankingDataset, evaluator: &SetEvaluator) -> ModelEnum {
-        let mut rand = Rand64::new(self.seed.into());
+        let mut rand = Rng::with_seed(self.seed);
 
         assert!(data.n_dim() > 0);
         assert!(!data.instances().is_empty());
@@ -209,7 +209,7 @@ impl CoordinateAscentParams {
         }
 
         let states: Vec<_> = (0..self.num_restarts)
-            .map(|restart_id| (restart_id, Rand64::new(rand.rand_u64().into())))
+            .map(|restart_id| (restart_id, Rng::with_seed(rand.u64(..))))
             .collect();
 
         let mut history: Vec<Scored<DenseLinearRankingModel>> = Vec::new();

@@ -2,14 +2,14 @@ use crate::dataset::{DatasetRef, RankingDataset, SampledDatasetRef};
 use crate::randutil;
 use crate::FeatureId;
 use crate::InstanceId;
-use oorandom::Rand64;
+use fastrand::Rng;
 use std::cmp;
 use std::collections::HashSet;
 
 pub trait DatasetSampling {
     /// Sample this dataset randomly to frate percent of features and srate percent of instances.
     /// At least one feature and one instance is selected no matter how small the percentage.
-    fn random_sample(&self, frate: f64, srate: f64, rand: &mut Rand64) -> SampledDatasetRef;
+    fn random_sample(&self, frate: f64, srate: f64, rand: &mut Rng) -> SampledDatasetRef;
 
     /// This represents a deterministic sampling of instances.
     fn with_instances(&self, instances: &[InstanceId]) -> SampledDatasetRef;
@@ -24,7 +24,7 @@ pub trait DatasetSampling {
     fn train_test(
         &self,
         test_fraction: f64,
-        rand: &mut Rand64,
+        rand: &mut Rng,
     ) -> (SampledDatasetRef, SampledDatasetRef);
 }
 
@@ -35,7 +35,7 @@ impl DatasetRef {
 }
 
 impl DatasetSampling for DatasetRef {
-    fn random_sample(&self, frate: f64, srate: f64, rand: &mut Rand64) -> SampledDatasetRef {
+    fn random_sample(&self, frate: f64, srate: f64, rand: &mut Rng) -> SampledDatasetRef {
         let mut features = self.features();
         let mut queries = self.queries();
 
@@ -117,7 +117,7 @@ impl DatasetSampling for DatasetRef {
     fn train_test(
         &self,
         test_fraction: f64,
-        rand: &mut Rand64,
+        rand: &mut Rng,
     ) -> (SampledDatasetRef, SampledDatasetRef) {
         let mut qs = self.queries();
         let n_test_qs = ((qs.len() as f64) * test_fraction) as usize;

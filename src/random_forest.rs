@@ -6,7 +6,7 @@ use crate::sampling::DatasetSampling;
 use crate::stats;
 use crate::Scored;
 use crate::{FeatureId, InstanceId};
-use oorandom::Rand64;
+use fastrand::Rng;
 use ordered_float::NotNan;
 use rayon::prelude::*;
 use std::cmp;
@@ -44,8 +44,8 @@ fn squared_error(ids: &[InstanceId], dataset: &dyn RankingDataset) -> NotNan<f64
 
     let mut sum_sq_errors = 0.0;
     for gain in ids.iter().cloned().map(|index| dataset.gain(index)) {
-        let diff = output - f64::from(gain.into_inner());
-        sum_sq_errors += (diff * diff).into_inner();
+        let diff = output.into_inner() - f64::from(gain.into_inner());
+        sum_sq_errors += diff * diff;
     }
     NotNan::new(sum_sq_errors).unwrap()
 }
@@ -100,18 +100,18 @@ impl SplitSelectionStrategy {
             SplitSelectionStrategy::BinaryGiniImpurity() => {
                 let lhs_w = lhs.len() as f64;
                 let rhs_w = rhs.len() as f64;
-                let lhs_gini = gini_impurity(lhs, dataset) * lhs_w;
-                let rhs_gini = gini_impurity(rhs, dataset) * rhs_w;
+                let lhs_gini = gini_impurity(lhs, dataset).into_inner() * lhs_w;
+                let rhs_gini = gini_impurity(rhs, dataset).into_inner() * rhs_w;
                 // Negative so that we minimize the impurity across the splits.
-                -(lhs_gini + rhs_gini)
+                -NotNan::new(lhs_gini + rhs_gini).expect("gini impurity NaN")
             }
             SplitSelectionStrategy::InformationGain() => {
                 let lhs_w = lhs.len() as f64;
                 let rhs_w = rhs.len() as f64;
-                let lhs_e = entropy(lhs, dataset) * lhs_w;
-                let rhs_e = entropy(rhs, dataset) * rhs_w;
+                let lhs_e = entropy(lhs, dataset).into_inner() * lhs_w;
+                let rhs_e = entropy(rhs, dataset).into_inner() * rhs_w;
                 // Negative so that we minimize the entropy across the splits.
-                -(lhs_e + rhs_e)
+                -NotNan::new(lhs_e + rhs_e).expect("entropy NaN")
             }
             SplitSelectionStrategy::TrueVarianceReduction() => {
                 let lhs_w = lhs.len() as f64;
@@ -140,10 +140,10 @@ pub struct RandomForestParams {
 
 impl Default for RandomForestParams {
     fn default() -> Self {
-        let mut rand = Rand64::new(0xdeadbeef);
+        let mut rand = Rng::with_seed(0xdeadbeef);
         Self {
             weight_trees: false,
-            seed: rand.rand_u64(),
+            seed: rand.u64(..),
             split_method: SplitSelectionStrategy::SquaredError(),
             quiet: false,
             num_trees: 100,
@@ -290,9 +290,9 @@ pub fn learn_ensemble(
     dataset: &DatasetRef,
     evaluator: &SetEvaluator,
 ) -> WeightedEnsemble {
-    let mut rand = Rand64::new(params.seed.into());
+    let mut rand = Rng::with_seed(params.seed);
     let seeds: Vec<(u32, u64)> = (0..params.num_trees)
-        .map(|i| (i, rand.rand_u64()))
+        .map(|i| (i, rand.u64(..)))
         .collect();
 
     let mut trees: Vec<Scored<TreeNode>> = Vec::new();
@@ -303,7 +303,7 @@ pub fn learn_ensemble(
     }
 
     trees.par_extend(seeds.par_iter().map(|(idx, rand_seed)| {
-        let mut local_rand = Rand64::new((*rand_seed).into());
+        let mut local_rand = Rng::with_seed(*rand_seed);
         let subsample = dataset
             .random_sample(
                 params.feature_sampling_rate,
@@ -459,7 +459,7 @@ mod test {
             }
         }
         // If this assertion fails and you're OK with it, you just broke SemVer; upgrade major version.
-        assert_float_eq("means[0] = predefined", means[0], 0.4367914517387043);
+        assert_float_eq("means[0] = predefined", means[0], 0.6620988746666521);
     }
 
     #[test]

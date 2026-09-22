@@ -1,27 +1,29 @@
-use oorandom::Rand64;
+use fastrand::Rng;
 
 /// Sample with replacement.
-pub fn sample_with_replacement<T: Clone>(data: &[T], rand: &mut Rand64, count: usize) -> Vec<T> {
-    let mut output = Vec::new();
-    let n = data.len() as u64;
+pub fn sample_with_replacement<T: Clone>(data: &[T], rand: &mut Rng, count: usize) -> Vec<T> {
+    let mut output = Vec::with_capacity(count);
+    let n = data.len();
     for _ in 0..count {
-        let idx = rand.rand_range(0..n) as usize;
+        let idx = rand.usize(0..n);
         output.push(data[idx].clone());
     }
     output
 }
 
-pub fn sample_without_replacement<T: Clone>(data: &[T], rand: &mut Rand64, count: usize) -> Vec<T> {
-    let mut in_vec: Vec<T> = data.to_vec();
-    shuffle(&mut in_vec, rand);
-    in_vec.into_iter().take(count).collect()
+/// Sample without replacement.
+pub fn sample_without_replacement<T: Clone>(data: &[T], rand: &mut Rng, count: usize) -> Vec<T> {
+    let mut values = data.to_vec();
+    let count = count.min(values.len());
+    for i in 0..count {
+        let j = rand.usize(i..values.len());
+        values.swap(i, j);
+    }
+    values.truncate(count);
+    values
 }
 
 /// Shuffle a vector.
-pub fn shuffle<T>(vec: &mut Vec<T>, rand: &mut Rand64) {
-    let n = vec.len() as u64;
-    for i in 0..n {
-        let j = rand.rand_range(i..n) as usize;
-        vec.swap(i as usize, j);
-    }
+pub fn shuffle<T>(vec: &mut Vec<T>, rand: &mut Rng) {
+    rand.shuffle(vec);
 }
