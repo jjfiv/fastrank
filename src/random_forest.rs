@@ -44,8 +44,8 @@ fn squared_error(ids: &[InstanceId], dataset: &dyn RankingDataset) -> NotNan<f64
 
     let mut sum_sq_errors = 0.0;
     for gain in ids.iter().cloned().map(|index| dataset.gain(index)) {
-        let diff = output - f64::from(gain.into_inner());
-        sum_sq_errors += (diff * diff).into_inner();
+        let diff = output.into_inner() - f64::from(gain.into_inner());
+        sum_sq_errors += diff * diff;
     }
     NotNan::new(sum_sq_errors).unwrap()
 }
@@ -100,18 +100,18 @@ impl SplitSelectionStrategy {
             SplitSelectionStrategy::BinaryGiniImpurity() => {
                 let lhs_w = lhs.len() as f64;
                 let rhs_w = rhs.len() as f64;
-                let lhs_gini = gini_impurity(lhs, dataset) * lhs_w;
-                let rhs_gini = gini_impurity(rhs, dataset) * rhs_w;
+                let lhs_gini = gini_impurity(lhs, dataset).into_inner() * lhs_w;
+                let rhs_gini = gini_impurity(rhs, dataset).into_inner() * rhs_w;
                 // Negative so that we minimize the impurity across the splits.
-                -(lhs_gini + rhs_gini)
+                -NotNan::new(lhs_gini + rhs_gini).expect("gini impurity NaN")
             }
             SplitSelectionStrategy::InformationGain() => {
                 let lhs_w = lhs.len() as f64;
                 let rhs_w = rhs.len() as f64;
-                let lhs_e = entropy(lhs, dataset) * lhs_w;
-                let rhs_e = entropy(rhs, dataset) * rhs_w;
+                let lhs_e = entropy(lhs, dataset).into_inner() * lhs_w;
+                let rhs_e = entropy(rhs, dataset).into_inner() * rhs_w;
                 // Negative so that we minimize the entropy across the splits.
-                -(lhs_e + rhs_e)
+                -NotNan::new(lhs_e + rhs_e).expect("entropy NaN")
             }
             SplitSelectionStrategy::TrueVarianceReduction() => {
                 let lhs_w = lhs.len() as f64;
